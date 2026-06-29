@@ -121,7 +121,7 @@ See the **[library manual](docs/LIBRARY.md)** for the API and examples.
 
 - **[CLI tools manual](docs/CLI.md)**
 - **[Library manual](docs/LIBRARY.md)**
-- **[Architecture](doc/ARCHITECTURE.md)**
+- **[Architecture](docs/ARCHITECTURE.md)**
 
 ## License
 
