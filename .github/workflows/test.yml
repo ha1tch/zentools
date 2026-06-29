@@ -1,9 +1,11 @@
 name: test
 
-# Native build, vet, and test on every platform that has a GitHub-hosted
-# runner: Linux, macOS, and Windows, on both x86-64 and arm64. Targets without a
-# native runner (the BSDs and 32-bit Raspberry Pi) are covered by build.yml,
-# which cross-compiles them.
+# Native build, vet, and test. The first job runs on the GitHub-hosted runners
+# (Linux, macOS, and Windows on x86-64, plus Linux and macOS on arm64). The
+# second job runs inside Debian containers on the Linux runner, giving a
+# non-Ubuntu Linux on both 64-bit and 32-bit. Targets with no native runner (the
+# BSDs, 32-bit Raspberry Pi, 32-bit Windows) are cross-compiled in
+# cross-build.yml.
 
 on:
   push:
@@ -15,7 +17,7 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  runners:
     name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -32,8 +34,6 @@ jobs:
             race: '-race'
           - os: windows-latest     # Windows x86-64
             race: '-race'
-          - os: windows-11-arm     # Windows arm64 (race detector unsupported here)
-            race: ''
     steps:
       - uses: actions/checkout@v4
 
@@ -41,6 +41,40 @@ jobs:
         with:
           go-version: '1.25'
           check-latest: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ${{ matrix.race }} -count=1 ./...
+
+  debian:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Non-Ubuntu Linux x86-64. Go is preinstalled in the image, so
+          # actions/setup-go is not used here.
+          - name: debian/amd64 (Go 1.25)
+            image: golang:1.25-bookworm
+            race: '-race'
+          # Non-Ubuntu Linux 32-bit. Runs natively because the amd64 host
+          # executes i386 binaries directly. The race detector is not supported
+          # on linux/386, so it is omitted here.
+          - name: debian/i386 (Go 1.25)
+            image: i386/golang:1.25-bookworm
+            race: ''
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Go version
+        run: go version
 
       - name: Build
         run: go build ./...

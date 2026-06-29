@@ -68,6 +68,11 @@ jobs:
           - name: dragonfly/amd64
             goos: dragonfly
             goarch: amd64
+
+          # Windows (32-bit; amd64 is tested natively in test.yml)
+          - name: windows/386
+            goos: windows
+            goarch: '386'
     steps:
       - uses: actions/checkout@v4
 
