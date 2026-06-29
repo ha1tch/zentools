@@ -9,9 +9,9 @@ name: cross-build
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
   pull_request:
-    branches: [main]
+    branches: [main, master]
 
 permissions:
   contents: read
@@ -36,6 +36,11 @@ jobs:
           - name: linux/arm64 (Pi 3/4/5, 64-bit)
             goos: linux
             goarch: arm64
+
+          # Linux 32-bit (x86)
+          - name: linux/386
+            goos: linux
+            goarch: '386'
 
           # FreeBSD
           - name: freebsd/amd64
@@ -69,7 +74,11 @@ jobs:
             goos: dragonfly
             goarch: amd64
 
-          # Windows (32-bit; amd64 is tested natively in test.yml)
+          # Windows (amd64 and 32-bit). Cross-compiled from Linux with cgo
+          # disabled, the same way the project's release binaries are built.
+          - name: windows/amd64
+            goos: windows
+            goarch: amd64
           - name: windows/386
             goos: windows
             goarch: '386'
@@ -83,6 +92,7 @@ jobs:
 
       - name: Build
         env:
+          CGO_ENABLED: '0'
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           GOARM: ${{ matrix.goarm }}

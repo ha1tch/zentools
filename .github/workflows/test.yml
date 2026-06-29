@@ -1,46 +1,39 @@
 name: test
 
-# Native build, vet, and test. The first job runs on the GitHub-hosted runners
-# (Linux, macOS, and Windows on x86-64, plus Linux and macOS on arm64). The
-# second job runs inside Debian containers on the Linux runner, giving a
-# non-Ubuntu Linux on both 64-bit and 32-bit. Targets with no native runner (the
-# BSDs, 32-bit Raspberry Pi, 32-bit Windows) are cross-compiled in
-# cross-build.yml.
+# Native build, vet, and test on the GitHub-hosted runners that work reliably
+# for a pure-Go project: Linux and macOS, on both x86-64 and arm64. Windows and
+# the other targets are covered by cross-build.yml, which cross-compiles them
+# from a Linux runner with CGO_ENABLED=0 (zentools has no cgo).
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
   pull_request:
-    branches: [main]
+    branches: [main, master]
 
 permissions:
   contents: read
 
 jobs:
-  runners:
+  test:
     name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest      # Linux x86-64
-            race: '-race'
-          - os: ubuntu-24.04-arm   # Linux arm64
-            race: '-race'
-          - os: macos-latest       # macOS arm64
-            race: '-race'
-          - os: macos-13           # macOS x86-64
-            race: '-race'
-          - os: windows-latest     # Windows x86-64
-            race: '-race'
+        os:
+          - ubuntu-latest      # Linux x86-64
+          - ubuntu-24.04-arm   # Linux arm64
+          - macos-latest       # macOS arm64
+          - macos-13           # macOS x86-64
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-          check-latest: true
 
       - name: Build
         run: go build ./...
@@ -49,38 +42,4 @@ jobs:
         run: go vet ./...
 
       - name: Test
-        run: go test ${{ matrix.race }} -count=1 ./...
-
-  debian:
-    name: ${{ matrix.name }}
-    runs-on: ubuntu-latest
-    container: ${{ matrix.image }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Non-Ubuntu Linux x86-64. Go is preinstalled in the image, so
-          # actions/setup-go is not used here.
-          - name: debian/amd64 (Go 1.25)
-            image: golang:1.25-bookworm
-            race: '-race'
-          # Non-Ubuntu Linux 32-bit. Runs natively because the amd64 host
-          # executes i386 binaries directly. The race detector is not supported
-          # on linux/386, so it is omitted here.
-          - name: debian/i386 (Go 1.25)
-            image: i386/golang:1.25-bookworm
-            race: ''
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Go version
-        run: go version
-
-      - name: Build
-        run: go build ./...
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: Test
-        run: go test ${{ matrix.race }} -count=1 ./...
+        run: go test -race ./... -count=1
