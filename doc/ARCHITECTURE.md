@@ -53,6 +53,27 @@ github.com/ha1tch/zentools
 └── (hygiene: VERSION, syncver.sh, release.sh, CHANGELOG.md, .gitignore, LICENSE)
 ```
 
+## Format ownership
+
+A format lives in zentools if and only if its purpose is interoperability
+between tools. Formats whose value is tied to one project's identity stay native
+to that project:
+
+| Format | Owner | Rationale |
+|--------|-------|-----------|
+| `.tap`, `.tzx` | zentools | interchange tape formats every tool reads |
+| `.sna`, `.z80` | zentools | portable snapshot standards |
+| BASIC tokenisation | zentools | shared encode/decode |
+| `.zxs` | **zenzx (native)** | zenzx's proprietary chunked format; its magic and metadata are emulator-specific |
+| `.dsk` (+3DOS) | **plus3 (native)** | mature, tested, CI-backed; zentools may depend on plus3 for disk, never the reverse |
+
+Consequence for consumers: zenzx keeps `.zxs` but swaps its `.sna`/`.z80` for
+zentools; plus3 keeps `.dsk` but swaps its broken in-tree TAP for
+`zentools/pkg/tap`. No project loses its signature format; all share the
+interchange ones.
+
+## Package coupling
+
 Packages do not import each other except that `cmd/` imports `pkg/*`. A format
 package importing another format package would couple them; keep them flat.
 (The one defensible exception, if it arises: a future `pkg/spectrum` holding
@@ -131,7 +152,7 @@ case-independence and the like (borrowed from zxgotools' parser).
 |---------|-------------|------|
 | `tap` | zentools (already built from zxgotools, fixed + verified) | Add `Decode`; done otherwise. |
 | `tzx` | zxgotools `cmd/tap2tzx` (writer verified this session) | Factor writer out, drop YAML to cmd, add `Decode`. |
-| `snapshot` | zenzx (only implementation) | Lift codecs, decouple to `MachineState`. Keep `.zxs` (sound); audit/fix `.sna`/`.z80`. |
+| `snapshot` | zenzx (only implementation) | Lift `.sna`/`.z80` codecs, decouple to `MachineState`, audit/fix. `.zxs` stays native to zenzx (see Format ownership). |
 | `basic` | plus3 (correct, both directions, tested) as base; zxgotools for architecture | Reconcile. plus3 is the correctness base; borrow zxgotools' options. Fix the float-number case zxgotools' test exposes. |
 | disk (`.dsk`) | plus3 `pkg/diskimg` (strong, tested, CI) | NOT moved into zentools. plus3 stays the disk authority; zentools may depend on plus3 for disk, not the reverse. |
 
