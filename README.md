@@ -27,6 +27,26 @@ os.WriteFile("mygame.tap", image, 0o644)
 is a file-to-file convenience wrapper. The CODE-block encoding is verified
 byte-identical to pasmo's `--tap` output.
 
+### pkg/build
+
+Turns machine-code bytes into loadable artifacts. It overlays the code onto a
+real booted machine state — one embedded boot snapshot per model — and emits
+tapes (`.tap`/`.tzx`, optionally with a BASIC auto-run loader) and snapshots
+(`.sna`/`.z80`) that load and run at a given entry point. This is the shared
+procedure behind both `zenas build` and `zx snap`.
+
+## Commands
+
+The `cmd/` directory provides command-line tools built on the packages:
+
+- `maketap`, `totap`, `loadtap`, `tap2tzx` - drop-in replacements for the
+  zxgotools utilities of the same names, preserving their interfaces while
+  running on the zentools packages.
+- `zx` - a modern, unified front-end organised by format, with subcommands
+  `tap`, `tzx`, `basic`, `snap`, `convert`, and `info`. It adds capabilities
+  the older tools lacked, such as creating runnable snapshots from a binary and
+  converting between tape and snapshot formats.
+
 ## Requirements
 
 - Go 1.25 or later

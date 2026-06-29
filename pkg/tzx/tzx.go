@@ -36,12 +36,14 @@ const (
 // EncodeOptions carries optional metadata written ahead of the tape data.
 // All fields are optional; the zero value produces a bare, valid TZX file.
 type EncodeOptions struct {
-	Title       string // archive-info title (0x32)
-	Author      string // archive-info author
-	Year        string // archive-info year
-	Description string // a text-description block (0x30)
-	StopIn48K   bool   // emit a "stop the tape if in 48K mode" block (0x2A)
-	Pause       uint16 // pause after each data block, ms (0 uses the default)
+	Title       string         // archive-info title (0x32)
+	Author      string         // archive-info author
+	Year        string         // archive-info year
+	Description string         // a text-description block (0x30)
+	StopIn48K   bool           // emit a "stop the tape if in 48K mode" block (0x2A)
+	Pause       uint16         // pause after each data block, ms (0 uses the default)
+	Hardware    []HardwareInfo // hardware-type block (0x33); empty means none
+	Group       string         // if set, the data blocks are bracketed in a named group (0x21/0x22)
 }
 
 // rawTAPBlock is the minimal view of a TAP block this package needs: the full
@@ -121,30 +123,26 @@ func textDescriptionBlock(desc string) []byte {
 // EncodeFromTAP converts a TAP image into a TZX image, wrapping each TAP block
 // in a standard-speed (0x10) block and prepending any requested metadata.
 func EncodeFromTAP(tapImage []byte, opts EncodeOptions) ([]byte, error) {
-	blocks, err := splitTAP(tapImage)
-	if err != nil {
+	w := NewWriter(opts.Pause)
+	w.ArchiveInfo(opts)
+	w.Description(opts.Description)
+	w.Hardware(opts.Hardware)
+	// A group brackets the data blocks: start before, end after. Groups cannot
+	// nest, and every start needs an end; encoding a single group around the
+	// data here satisfies both rules by construction.
+	if opts.Group != "" {
+		w.GroupStart(opts.Group)
+	}
+	if err := w.AddTAP(tapImage); err != nil {
 		return nil, err
 	}
-	pause := opts.Pause
-	if pause == 0 {
-		pause = defaultPause
-	}
-
-	out := header()
-	if b := archiveInfoBlock(opts); b != nil {
-		out = append(out, b...)
-	}
-	if b := textDescriptionBlock(opts.Description); b != nil {
-		out = append(out, b...)
-	}
-	for _, blk := range blocks {
-		out = append(out, standardSpeedBlock(blk, pause)...)
+	if opts.Group != "" {
+		w.GroupEnd()
 	}
 	if opts.StopIn48K {
-		// 0x2A block: ID then a 4-byte length field that is always zero.
-		out = append(out, idStopThe48K, 0, 0, 0, 0)
+		w.StopIn48K()
 	}
-	return out, nil
+	return w.Bytes(), nil
 }
 
 // splitTAP cuts a TAP image into its raw blocks (flag+payload+checksum each),
@@ -222,6 +220,23 @@ func Decode(image []byte) ([]Block, error) {
 			blocks = append(blocks, Block{ID: id})
 		case idStopThe48K:
 			pos += 4 // 4-byte length field, always zero
+			blocks = append(blocks, Block{ID: id})
+		case idHardwareTyp:
+			if pos >= len(image) {
+				return nil, errors.New("truncated 0x33 block")
+			}
+			n := int(image[pos]) // number of HWINFO entries
+			pos += 1 + n*3       // each entry is 3 bytes
+			blocks = append(blocks, Block{ID: id})
+		case idGroupStart:
+			if pos >= len(image) {
+				return nil, errors.New("truncated 0x21 block")
+			}
+			n := int(image[pos]) // group-name length
+			pos += 1 + n
+			blocks = append(blocks, Block{ID: id})
+		case idGroupEnd:
+			// No body.
 			blocks = append(blocks, Block{ID: id})
 		default:
 			return blocks, fmt.Errorf("unsupported TZX block id 0x%02X at offset %d", id, pos-1)

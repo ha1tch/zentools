@@ -47,9 +47,12 @@ github.com/ha1tch/zentools
 │   │   ├── sna.go       48K / 128K .sna
 │   │   └── z80.go       .z80 (versioned, compressed)
 │   ├── basic/       BASIC tokenise + detokenise (48K and 128K keywords).
+│   ├── build/       overlay machine code onto a boot state; emit tapes/snapshots.
 │   └── version/     library version constant.
-├── cmd/             thin CLI tools over the packages (maketap, tap2tzx, ...).
-│                    third-party deps (YAML, flags) live here, not in pkg/.
+├── cmd/             CLI tools over the packages.
+│   ├── maketap, totap, loadtap, tap2tzx   drop-in zxgotools replacements.
+│   └── zx/          modern unified front-end (tap, tzx, basic, snap, convert, info).
+│                    third-party deps (flags) live here, not in pkg/.
 └── (hygiene: VERSION, syncver.sh, release.sh, CHANGELOG.md, .gitignore, LICENSE)
 ```
 
@@ -108,7 +111,7 @@ func Decode(image []byte) ([]Block, error)
 ```
 
 The writer is lifted out of zxgotools' `cmd/tap2tzx` and made dependency-free.
-`EncodeOptions` carries the metadata/hardware flags as a plain struct; YAML
+`EncodeOptions` carries the metadata/hardware flags as a plain struct; JSON
 parsing into that struct stays in `cmd/tap2tzx`.
 
 ### pkg/snapshot
