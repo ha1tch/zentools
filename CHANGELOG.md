@@ -18,6 +18,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   manually against an existing tag), cross-compiles every command for all
   supported targets, packages them one archive per platform (`.tar.gz`, or
   `.zip` for Windows), and attaches the archives to the GitHub release.
+- CI actions pinned to their Node 24 era major versions (`actions/checkout@v5`,
+  `actions/upload-artifact@v5`, `actions/download-artifact@v5`), clearing the
+  Node 20 deprecation warning ahead of its removal from the runners.
 
 ## [0.4.0] - 2026-06-29
 
