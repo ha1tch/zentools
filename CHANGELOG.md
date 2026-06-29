@@ -9,11 +9,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Continuous integration. A `test` workflow runs the build, `go vet`, and the
-  race-enabled test suite natively on the GitHub-hosted Linux and macOS runners
-  (x86-64 and arm64). A `cross-build` workflow verifies that the code
-  cross-compiles, with cgo disabled, for every other supported target: Windows
-  (amd64 and 386), 32-bit Linux, the Raspberry Pi ARM variants (ARMv6, ARMv7,
-  and arm64), and the BSDs (FreeBSD, OpenBSD, NetBSD, and DragonFly).
+  race-enabled test suite natively on the GitHub-hosted Linux runners (x86-64 and
+  arm64). A `cross-build` workflow verifies that the code cross-compiles, with
+  cgo disabled, for every other supported target: macOS (amd64 and arm64),
+  Windows (amd64 and 386), 32-bit Linux, the Raspberry Pi ARM variants (ARMv6,
+  ARMv7, and arm64), and the BSDs (FreeBSD, OpenBSD, NetBSD, and DragonFly).
 
 ## [0.4.0] - 2026-06-29
 

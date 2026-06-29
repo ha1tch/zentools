@@ -1,9 +1,9 @@
 name: test
 
-# Native build, vet, and test on the GitHub-hosted runners that work reliably
-# for a pure-Go project: Linux and macOS, on both x86-64 and arm64. Windows and
-# the other targets are covered by cross-build.yml, which cross-compiles them
-# from a Linux runner with CGO_ENABLED=0 (zentools has no cgo).
+# Native build, vet, and test on Linux (x86-64 and arm64). Every other target,
+# including macOS and Windows, is cross-compiled from a Linux runner with cgo
+# disabled in cross-build.yml; this is faster and more reliable than waiting on
+# scarce macOS and Windows hosted runners, and zentools has no cgo to test.
 
 on:
   push:
@@ -24,8 +24,6 @@ jobs:
         os:
           - ubuntu-latest      # Linux x86-64
           - ubuntu-24.04-arm   # Linux arm64
-          - macos-latest       # macOS arm64
-          - macos-13           # macOS x86-64
     steps:
       - name: Check out
         uses: actions/checkout@v4

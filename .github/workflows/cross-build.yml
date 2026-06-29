@@ -1,11 +1,12 @@
 name: cross-build
 
-# Build verification for targets that have no GitHub-hosted runner: the
-# Raspberry Pi ARM variants and the BSDs. zentools is pure Go with no cgo, so it
-# cross-compiles cleanly; these jobs confirm every supported target still
-# builds. Running the tests on these targets requires real hardware or an
-# emulator and is out of scope for CI — test.yml runs the tests natively where
-# runners exist.
+# Build verification, with cgo disabled, for every target the project ships to
+# but does not test natively: macOS and Windows (built from Linux to avoid the
+# scarce, slow macOS and Windows hosted runners), the 32-bit Linux target, the
+# Raspberry Pi ARM variants, and the BSDs. zentools is pure Go with no cgo, so it
+# cross-compiles cleanly. Running the tests on these targets requires real
+# hardware or an emulator and is out of scope for CI; test.yml runs the tests
+# natively on Linux.
 
 on:
   push:
@@ -82,6 +83,15 @@ jobs:
           - name: windows/386
             goos: windows
             goarch: '386'
+
+          # macOS (Intel and Apple Silicon). Cross-compiled from Linux to avoid
+          # the scarce, slow macOS hosted runners.
+          - name: darwin/amd64
+            goos: darwin
+            goarch: amd64
+          - name: darwin/arm64
+            goos: darwin
+            goarch: arm64
     steps:
       - uses: actions/checkout@v4
 
