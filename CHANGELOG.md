@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-06-29
+
+### Added
+
+- Continuous integration. A `test` workflow runs the build, `go vet`, and the
+  race-enabled test suite natively on Linux, macOS, and Windows (x86-64 and
+  arm64). A `cross-build` workflow verifies that the code cross-compiles for the
+  targets without a hosted runner: the Raspberry Pi ARM variants (ARMv6, ARMv7,
+  and arm64) and the BSDs (FreeBSD, OpenBSD, NetBSD, and DragonFly). The race
+  detector is enabled everywhere it is supported and skipped on Windows arm64,
+  where it is not.
+
 ## [0.4.0] - 2026-06-29
 
 ### Added

@@ -1,0 +1,52 @@
+name: test
+
+# Native build, vet, and test on every platform that has a GitHub-hosted
+# runner: Linux, macOS, and Windows, on both x86-64 and arm64. Targets without a
+# native runner (the BSDs and 32-bit Raspberry Pi) are covered by build.yml,
+# which cross-compiles them.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest      # Linux x86-64
+            race: '-race'
+          - os: ubuntu-24.04-arm   # Linux arm64
+            race: '-race'
+          - os: macos-latest       # macOS arm64
+            race: '-race'
+          - os: macos-13           # macOS x86-64
+            race: '-race'
+          - os: windows-latest     # Windows x86-64
+            race: '-race'
+          - os: windows-11-arm     # Windows arm64 (race detector unsupported here)
+            race: ''
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          check-latest: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ${{ matrix.race }} -count=1 ./...

@@ -1,0 +1,84 @@
+name: cross-build
+
+# Build verification for targets that have no GitHub-hosted runner: the
+# Raspberry Pi ARM variants and the BSDs. zentools is pure Go with no cgo, so it
+# cross-compiles cleanly; these jobs confirm every supported target still
+# builds. Running the tests on these targets requires real hardware or an
+# emulator and is out of scope for CI — test.yml runs the tests natively where
+# runners exist.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  cross-build:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Raspberry Pi
+          - name: linux/arm (Pi Zero/1, ARMv6)
+            goos: linux
+            goarch: arm
+            goarm: '6'
+          - name: linux/arm (Pi 2/3, ARMv7)
+            goos: linux
+            goarch: arm
+            goarm: '7'
+          - name: linux/arm64 (Pi 3/4/5, 64-bit)
+            goos: linux
+            goarch: arm64
+
+          # FreeBSD
+          - name: freebsd/amd64
+            goos: freebsd
+            goarch: amd64
+          - name: freebsd/arm64
+            goos: freebsd
+            goarch: arm64
+          - name: freebsd/386
+            goos: freebsd
+            goarch: '386'
+
+          # OpenBSD
+          - name: openbsd/amd64
+            goos: openbsd
+            goarch: amd64
+          - name: openbsd/arm64
+            goos: openbsd
+            goarch: arm64
+
+          # NetBSD
+          - name: netbsd/amd64
+            goos: netbsd
+            goarch: amd64
+          - name: netbsd/arm64
+            goos: netbsd
+            goarch: arm64
+
+          # DragonFly BSD
+          - name: dragonfly/amd64
+            goos: dragonfly
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          check-latest: true
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+        run: go build ./...

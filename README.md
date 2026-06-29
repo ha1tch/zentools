@@ -1,5 +1,8 @@
 # zentools
 
+[![test](https://github.com/ha1tch/zentools/actions/workflows/test.yml/badge.svg)](https://github.com/ha1tch/zentools/actions/workflows/test.yml)
+[![cross-build](https://github.com/ha1tch/zentools/actions/workflows/cross-build.yml/badge.svg)](https://github.com/ha1tch/zentools/actions/workflows/cross-build.yml)
+
 A Go library and command-line toolkit for converting and manipulating ZX
 Spectrum file formats: TAP, TZX, snapshots (`.sna`, `.z80`), and BASIC. No
 third-party dependencies.
