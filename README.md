@@ -1,63 +1,130 @@
 # zentools
 
-A library of ZX Spectrum binary-format tools written in Go: tape images,
-snapshots, and related formats, packaged as reusable, dependency-free packages
-that other tools (assemblers, emulators, disk utilities) can import.
+A Go library and command-line toolkit for converting and manipulating ZX
+Spectrum file formats: TAP, TZX, snapshots (`.sna`, `.z80`), and BASIC. No
+third-party dependencies.
 
-## Status
+- **[CLI tools manual](docs/CLI.md)** — every command and flag, with the
+  conversion table and what each conversion costs.
+- **[Library manual](docs/LIBRARY.md)** — packages, types, and examples.
 
-Early. The first package is `pkg/tap`, with TZX, BASIC tokenisation, and
-snapshot formats to follow.
+## Tools
 
-## Packages
+Four focused tools:
 
-### pkg/tap
+| Tool      | Does                                              |
+| --------- | ------------------------------------------------- |
+| `maketap` | binary to TAP (a CODE block)                      |
+| `totap`   | binary or BASIC text to TAP                       |
+| `loadtap` | inspect a TAP, or extract its raw data            |
+| `tap2tzx` | one or more TAPs to a single TZX, with metadata   |
 
-Reads and writes ZX Spectrum TAP files. The core works in memory:
+These are drop-in replacements for the [zxgotools](https://github.com/ha1tch/zxgotools)
+utilities of the same names: same interfaces, corrected behaviour, no external
+dependencies. zxgotools is deprecated in favour of zentools.
 
-```go
-import "github.com/ha1tch/zentools/pkg/tap"
+And `zx`, a unified command organised by format:
 
-// Wrap assembled bytes as a CODE block loaded at 0x8000.
-image := tap.EncodeCode("mygame", code, 0x8000)
-os.WriteFile("mygame.tap", image, 0o644)
+| Command      | Does                                                       |
+| ------------ | ---------------------------------------------------------- |
+| `zx tap`     | make and inspect TAP images                                |
+| `zx tzx`     | make and inspect TZX images                                |
+| `zx basic`   | tokenise and detokenise ZX BASIC                           |
+| `zx snap`    | build a runnable snapshot from a binary, or inspect one    |
+| `zx convert` | convert between any tape and snapshot format               |
+| `zx info`    | identify and summarise a file                              |
+
+### Usage: the focused tools
+
+```
+# binary to TAP, named, loading at 0x8000
+maketap --name game --address 32768 game.bin game.tap
+
+# binary to TAP (CODE block)
+totap --binary --name game --address 32768 game.bin game.tap
+
+# BASIC text to an auto-running TAP
+totap --basic --name loader --autostart 10 loader.bas loader.tap
+
+# list a tape's blocks; -d adds a hex dump
+loadtap game.tap
+loadtap -d game.tap
+
+# extract a tape's raw data, skipping headers
+loadtap -r game.tap > game.payload
+
+# one TAP to TZX with metadata
+tap2tzx -o game.tzx -m --title "My Game" --author "haitch" --year 2026 game.tap
+
+# several TAPs to one 128K multiload TZX, grouped
+tap2tzx -o game.tzx -128 --multiload --group "Game" part1.tap part2.tap part3.tap
 ```
 
-`EncodeCode` and `EncodeProgram` return the complete TAP bytes; `WriteCodeFile`
-is a file-to-file convenience wrapper. The CODE-block encoding is verified
-byte-identical to pasmo's `--tap` output.
+### Usage: zx
 
-### pkg/build
+```
+# make a TAP from a binary, with a BASIC auto-run loader
+zx tap make game.bin --origin 0x8000 --loader --start 0x8000 -o game.tap
 
-Turns machine-code bytes into loadable artifacts. It overlays the code onto a
-real booted machine state — one embedded boot snapshot per model — and emits
-tapes (`.tap`/`.tzx`, optionally with a BASIC auto-run loader) and snapshots
-(`.sna`/`.z80`) that load and run at a given entry point. This is the shared
-procedure behind both `zenas build` and `zx snap`.
+# inspect a tape
+zx tap info game.tap
 
-## Commands
+# wrap a TAP as TZX with archive metadata
+zx tzx make game.tap --title "My Game" --author "haitch" --year 2026 -o game.tzx
 
-The `cmd/` directory provides command-line tools built on the packages:
+# tokenise BASIC source, then read it back
+zx basic tokenise loader.bas -o loader.bin
+zx basic detokenise loader.bin
 
-- `maketap`, `totap`, `loadtap`, `tap2tzx` - drop-in replacements for the
-  zxgotools utilities of the same names, preserving their interfaces while
-  running on the zentools packages.
-- `zx` - a modern, unified front-end organised by format, with subcommands
-  `tap`, `tzx`, `basic`, `snap`, `convert`, and `info`. It adds capabilities
-  the older tools lacked, such as creating runnable snapshots from a binary and
-  converting between tape and snapshot formats.
+# build a runnable snapshot from a binary, in both formats
+zx snap make game.bin --start 0x8000 --model 48k --sna --z80 -o game
+zx snap info game.z80
 
-## Requirements
+# convert between formats (extensions decide source and target)
+zx convert game.tap -o game.tzx              # lossless
+zx convert game.sna -o game.z80              # lossless
+zx convert game.tap -o game.z80 --start 0x8000   # tape to snapshot needs --start
 
-- Go 1.25 or later
+# identify any file
+zx info game.tzx
+```
 
-## Building
+Flags may appear in any position. See the **[CLI tools manual](docs/CLI.md)** for
+every flag and a full account of the conversions.
+
+## Install
 
 ```sh
-go build ./...
-go test ./...
+go get github.com/ha1tch/zentools@latest   # library
+go build ./...                             # command-line tools
 ```
+
+Requires Go 1.25 or later.
+
+## Library
+
+Six packages, each owning one format family, depending only on the standard
+library:
+
+| Package        | Does                                                  |
+| -------------- | ---------------------------------------------------- |
+| `pkg/tap`      | read and write TAP images                            |
+| `pkg/tzx`      | read and write TZX images (v1.20)                    |
+| `pkg/basic`    | tokenise and detokenise ZX BASIC (48K and 128K)      |
+| `pkg/snapshot` | read and write `.sna` and `.z80` via a neutral state |
+| `pkg/build`    | overlay code onto a boot state, emit tapes/snapshots |
+| `pkg/version`  | the library version constant                         |
+
+See the **[library manual](docs/LIBRARY.md)** for the API and examples.
+
+## Documentation
+
+- **[CLI tools manual](docs/CLI.md)**
+- **[Library manual](docs/LIBRARY.md)**
+- **[Architecture](doc/ARCHITECTURE.md)**
 
 ## License
 
-Licensed under the Apache License, Version 2.0. See the LICENSE file.
+Apache License 2.0. See LICENSE, or https://www.apache.org/licenses/LICENSE-2.0.
+
+Copyright (c) 2026 haitch <h@ual.li>
