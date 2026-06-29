@@ -25,6 +25,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Linux
+          - name: linux/amd64
+            goos: linux
+            goarch: amd64
           # Raspberry Pi
           - name: linux/arm (Pi Zero/1, ARMv6)
             goos: linux
