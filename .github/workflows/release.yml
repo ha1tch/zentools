@@ -1,0 +1,123 @@
+name: Release
+
+# On a version tag, build every command for every supported target, package the
+# binaries one archive per platform (a .tar.gz for Unix-like targets, a .zip for
+# Windows), and attach the archives to the GitHub release. zentools is pure Go,
+# so every target is cross-compiled from a Linux runner with cgo disabled — the
+# same approach used for build verification in cross-build.yml.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build and release (e.g. v0.4.1)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.goos }}/${{ matrix.goarch }}${{ matrix.goarm && format('v{0}', matrix.goarm) || '' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux,     goarch: amd64 }
+          - { goos: linux,     goarch: '386' }
+          - { goos: linux,     goarch: arm, goarm: '6' }
+          - { goos: linux,     goarch: arm, goarm: '7' }
+          - { goos: linux,     goarch: arm64 }
+          - { goos: darwin,    goarch: amd64 }
+          - { goos: darwin,    goarch: arm64 }
+          - { goos: windows,   goarch: amd64 }
+          - { goos: windows,   goarch: '386' }
+          - { goos: freebsd,   goarch: amd64 }
+          - { goos: freebsd,   goarch: arm64 }
+          - { goos: freebsd,   goarch: '386' }
+          - { goos: openbsd,   goarch: amd64 }
+          - { goos: openbsd,   goarch: arm64 }
+          - { goos: netbsd,    goarch: amd64 }
+          - { goos: netbsd,    goarch: arm64 }
+          - { goos: dragonfly, goarch: amd64 }
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Derive version from tag
+        id: version
+        run: |
+          ref="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "version=${ref#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and package
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # A descriptive platform suffix, including the ARM version where set.
+          suffix="${GOOS}-${GOARCH}"
+          if [ -n "${GOARM}" ]; then suffix="${suffix}v${GOARM}"; fi
+
+          stage="zentools-${VERSION}-${suffix}"
+          mkdir -p "dist/${stage}"
+
+          ext=""
+          if [ "${GOOS}" = "windows" ]; then ext=".exe"; fi
+
+          # Build every command into the staging directory.
+          for cmd in maketap totap loadtap tap2tzx zx; do
+            go build -trimpath -o "dist/${stage}/${cmd}${ext}" "./cmd/${cmd}"
+          done
+
+          # Include the licence and readme alongside the binaries.
+          cp LICENSE README.md "dist/${stage}/" 2>/dev/null || true
+
+          # Package: zip for Windows, tar.gz for everything else.
+          cd dist
+          if [ "${GOOS}" = "windows" ]; then
+            archive="${stage}.zip"
+            zip -r -q "${archive}" "${stage}"
+          else
+            archive="${stage}.tar.gz"
+            tar czf "${archive}" "${stage}"
+          fi
+          echo "archive=dist/${archive}" >> "$GITHUB_ENV"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zentools-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm && format('v{0}', matrix.goarm) || '' }}
+          path: ${{ env.archive }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all archives
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: dist/*
+          generate_release_notes: true

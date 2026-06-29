@@ -14,6 +14,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   cgo disabled, for every other supported target: macOS (amd64 and arm64),
   Windows (amd64 and 386), 32-bit Linux, the Raspberry Pi ARM variants (ARMv6,
   ARMv7, and arm64), and the BSDs (FreeBSD, OpenBSD, NetBSD, and DragonFly).
+- Release automation. A `release` workflow, triggered by a version tag (or run
+  manually against an existing tag), cross-compiles every command for all
+  supported targets, packages them one archive per platform (`.tar.gz`, or
+  `.zip` for Windows), and attaches the archives to the GitHub release.
 
 ## [0.4.0] - 2026-06-29
 
