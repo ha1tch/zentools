@@ -4,7 +4,50 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.1] - 2026-06-29
+## [0.5.0] - 2026-06-30
+
+### Added
+
+- `pkg/scr`: a new package for ZX Spectrum screens (`.scr`, the 6912-byte
+  display file) and a companion asset-collection format. It provides:
+  - `Screen` encode/decode with the authoritative palette (dim `0xC8`, bright
+    `0xFF`), an image converter (`FromImage`/`ToImage`), and PNG/JPEG/GIF
+    decoding with `none`/`stretch`/`bestfit`/`centre` resize modes.
+  - An attribute-aware image reducer that posterises, snaps to the Spectrum
+    palette, and selects the two most frequent colours per cell by palette
+    index. Tallying by index (rather than by index-and-brightness) keeps a
+    feature whose antialiased pixels straddle both brightness sets from
+    self-competing, and a uniform cell resolves to solid paper with no set bits.
+  - `Crop`, `AutoExtent`, and `BitmapExtent` for trimming a screen or finding
+    the bounding box of its set bits.
+  - The ZCUT asset-collection format (`pkg/scr/cutout.go`): a container of N
+    named, heterogeneous assets, each carrying a linear bitmap and optional
+    attributes, with a validated chunk layout (`ZCUT` magic, per-asset `IMAG`
+    chunks padded to an 8-byte stride). Files use the `.cut` extension (8.3-safe
+    for the +3DOS filesystem); the in-file magic and the colloquial name remain
+    ZCUT.
+  - Asset operations: `CutRegion`/`CutCells` (attributes retained only on
+    cell-aligned cuts), `Paste` with a `PasteOp` bit-operation mode
+    (`PasteOR` the default, plus `PasteAND`, `PasteCOPY`, `PasteXOR`),
+    `ApplyMask`, and `AssetToImage` for rendering a single asset.
+- `cmd/zx`: a `scr` command group for the above.
+  - `zx scr encode` / `decode` - convert an image to a `.scr` and back.
+  - `zx scr crop` - trim a screen or image, with `--auto`, `--bits`,
+    `--with-attributes`, and `--bitmap-only` modes.
+  - `zx scr cut` / `paste` / `ls` - build a `.cut` collection by appending named
+    regions, composite assets back onto a screen (with `--op or|and|copy|xor`
+    and a `--set-attr` recolour), and list a collection. The `ls` listing leads
+    with a 0-based chunk index and a `PIXMAP` column whose values are
+    `color`, `mono`, or `mask`.
+  - `zx scr atlas` - render a collection as a labelled contact sheet (a built-in
+    5x7 bitmap font keeps the command dependency-free).
+  - `zx scr fromsnap` - extract the display file from a `.sna` or `.z80`
+    snapshot (48K or 128K, currently-paged screen) to a `.scr`.
+
+### Changed
+
+- The version package documentation referred to zenas (the project it was lifted
+  from); corrected to zentools.
 
 ### Added
 

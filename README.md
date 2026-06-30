@@ -90,6 +90,23 @@ zx convert game.tap -o game.z80 --start 0x8000   # tape to snapshot needs --star
 
 # identify any file
 zx info game.tzx
+
+# encode an image to a screen and back; bestfit preserves aspect
+zx scr encode logo.png --resize=bestfit --fillattr="paper:black" -o logo.scr
+zx scr decode logo.scr -o logo.png
+
+# extract the screen from a snapshot
+zx scr fromsnap game.z80 -o title.scr
+
+# cut named regions into a .cut collection, list it, render a contact sheet
+zx scr cut --cells 13,3,8,11 --name gem title.scr -o parts.cut
+zx scr cut --cells 2,14,8,5  --name logo title.scr -o parts.cut
+zx scr ls parts.cut
+zx scr atlas parts.cut --scale 4 -o parts-atlas.png
+
+# composite an asset back onto a screen (AND a mask, then OR the data)
+zx scr paste parts.cut:mask --at 96,80 --op and screen.scr -o tmp.scr
+zx scr paste parts.cut:data --at 96,80 --op or  tmp.scr    -o out.scr
 ```
 
 Flags may appear in any position. See the **[CLI tools manual](docs/CLI.md)** for
@@ -106,7 +123,7 @@ Requires Go 1.25 or later.
 
 ## Library
 
-Six packages, each owning one format family, depending only on the standard
+Seven packages, each owning one format family, depending only on the standard
 library:
 
 | Package        | Does                                                  |
@@ -116,6 +133,7 @@ library:
 | `pkg/basic`    | tokenise and detokenise ZX BASIC (48K and 128K)      |
 | `pkg/snapshot` | read and write `.sna` and `.z80` via a neutral state |
 | `pkg/build`    | overlay code onto a boot state, emit tapes/snapshots |
+| `pkg/scr`      | read/write `.scr` screens and `.cut` asset collections |
 | `pkg/version`  | the library version constant                         |
 
 See the **[library manual](docs/LIBRARY.md)** for the API and examples.

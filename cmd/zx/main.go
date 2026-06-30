@@ -50,6 +50,8 @@ func main() {
 		err = cmdInfo(args)
 	case "convert":
 		err = cmdConvert(args)
+	case "scr":
+		err = cmdSCR(args)
 	case "version", "-v", "--version":
 		fmt.Printf("zx (zentools) %s\n", version.Version)
 	case "help", "-h", "--help":
@@ -77,6 +79,7 @@ Commands:
   basic   tokenise and detokenise ZX BASIC
   snap    create and inspect .sna / .z80 snapshots
   convert convert between tape and snapshot formats
+  scr     convert images to/from SCR screen files
   info    auto-detect a file's format and summarise it
   version print the zentools version
 
