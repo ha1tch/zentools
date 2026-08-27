@@ -10,7 +10,7 @@ import (
 func sampleTAP() []byte {
 	// header block: len 0x13, flag 0x00, type 0x03, name (10), dlen, p1, p2, cksum
 	hdr := []byte{0x00, 0x03}
-	hdr = append(hdr, []byte("CODE      ")...)      // 10-char name
+	hdr = append(hdr, []byte("CODE      ")...)            // 10-char name
 	hdr = append(hdr, 0x04, 0x00, 0x00, 0x80, 0x00, 0x80) // dlen=4 p1=0x8000 p2=0x8000
 	var hc byte
 	for _, b := range hdr {

@@ -4,6 +4,41 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-08-23
+
+### Added
+
+- **`pkg/tzx`: full coverage of all 25 SpecIDE-documented TZX block
+  types** (previously a subset). Notable additions: 0x18 CSW Recording
+  (zlib decompression via Go's stdlib `compress/zlib`, no external
+  dependency, plus CSW RLE pulse decoding), 0x19 Generalized Data
+  (structure/length validated; alphabet-driven pulse decoding
+  deliberately deferred as an acknowledged scope boundary -- never
+  observed in the newdiv 303-game/413-TZX validation corpus), 0x24/0x25
+  Loop Start/End (real control-flow expansion at decode time -- the
+  loop body is repeated inline in the decoded block stream), 0x23
+  Jump/0x26 Call/0x27 Return (recognised, safe no-op, matching
+  libspectrum's own stub-level support for these). Bounds-checking gaps
+  in five original handlers (`idArchiveInfo`, `idTextDesc`,
+  `idStopThe48K`, `idHardwareTyp`, `idGroupStart`) found and fixed via
+  libspectrum's own `invalid-hardwareinfo.tzx` test fixture.
+  `DecodeBlock(raw []byte) (Block, error)` exported from `pkg/tap`,
+  parsing a single raw flag+payload+checksum block with no length
+  prefix -- used both for `.tap` files and for a TZX 0x10 block's own
+  payload, which is structurally identical.
+- **`pkg/scr`: OCR** (`ocr.go`) -- reads text from a rendered ZX
+  Spectrum screen by matching each 8x8 character cell against the real
+  ROM font, for driving emulators through screenshots without a human
+  reading images by eye. Built on a new, standalone **`pkg/bdf`**
+  package: a BDF (Glyph Bitmap Distribution Format) bitmap font reader,
+  parsing glyph blocks and rasterising each to a full-cell RGBA pixmap.
+  `zx scr ocr` added as a new CLI subcommand.
+- Validated against the newdiv corpus (303 commercial games, 413 TZX +
+  404 TAP files, downloaded from archive.org's ZX Spectrum Top 100
+  collection): TZX decode 100% clean (413/413); TAP decode 99.5%
+  (401/403 -- the two failures are both Operation Wolf variants with a
+  trailing 1-byte garbage block, correctly rejected).
+
 ## [0.5.0] - 2026-06-30
 
 ### Added

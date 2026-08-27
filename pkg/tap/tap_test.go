@@ -16,8 +16,8 @@ func TestEncodeCodeDataBlock(t *testing.T) {
 	// dataLength 4, param1 0x8000 (load addr), param2 0x8000.
 	wantHeader := []byte{
 		0x13, 0x00, // block length
-		0x00,       // flag (header)
-		0x03,       // type CODE
+		0x00,                                             // flag (header)
+		0x03,                                             // type CODE
 		'T', 'E', 'S', 'T', ' ', ' ', ' ', ' ', ' ', ' ', // name, padded to 10
 		0x04, 0x00, // data length
 		0x00, 0x80, // param1 load address 0x8000
@@ -104,5 +104,56 @@ func TestDecodeDetectsBadChecksum(t *testing.T) {
 	}
 	if blocks[1].ChecksumOK {
 		t.Error("corrupted data block reported ChecksumOK=true")
+	}
+}
+
+// TestDecodeBlock_MatchesDecodeForEachBlock confirms DecodeBlock (used
+// directly by a caller with an unprefixed raw block in hand, e.g.
+// zenzx's own TZX 0x10 handling, since a 0x10 payload IS a TAP-format
+// block's raw bytes) produces exactly the same Block Decode itself
+// would for the same bytes -- since Decode is now implemented in terms
+// of DecodeBlock, this also guards against the two ever silently
+// diverging in a future edit.
+func TestDecodeBlock_MatchesDecodeForEachBlock(t *testing.T) {
+	img := EncodeCode("TESTCODE", []byte{1, 2, 3, 4}, 0x8000)
+	blocks, err := Decode(img)
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("got %d blocks, want 2", len(blocks))
+	}
+
+	// Re-derive each block's own raw bytes (flag+payload+checksum) from
+	// the image directly, and confirm DecodeBlock on that raw slice
+	// matches what Decode already returned for it.
+	pos := 0
+	for i, want := range blocks {
+		blockLen := int(img[pos]) | int(img[pos+1])<<8
+		pos += 2
+		raw := img[pos : pos+blockLen]
+		pos += blockLen
+
+		got, err := DecodeBlock(raw)
+		if err != nil {
+			t.Fatalf("DecodeBlock(block %d): %v", i, err)
+		}
+		if got.IsHeader != want.IsHeader || got.Flag != want.Flag ||
+			got.Type != want.Type || got.Name != want.Name ||
+			got.DataLength != want.DataLength || got.ChecksumOK != want.ChecksumOK ||
+			string(got.Data) != string(want.Data) {
+			t.Errorf("block %d: DecodeBlock = %+v, want %+v", i, got, want)
+		}
+	}
+}
+
+// TestDecodeBlock_RejectsTooShort confirms DecodeBlock returns a real
+// error for a slice too short to even hold a flag and checksum byte,
+// rather than panicking on the slice arithmetic.
+func TestDecodeBlock_RejectsTooShort(t *testing.T) {
+	for _, raw := range [][]byte{nil, {}, {0x00}} {
+		if _, err := DecodeBlock(raw); err == nil {
+			t.Errorf("DecodeBlock(%v): expected an error, got none", raw)
+		}
 	}
 }

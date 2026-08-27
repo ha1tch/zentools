@@ -46,6 +46,8 @@ func cmdSCR(args []string) error {
 		return scrAtlas(args[1:])
 	case "fromsnap":
 		return scrFromSnap(args[1:])
+	case "ocr":
+		return scrOCR(args[1:])
 	case "-h", "--help", "help":
 		scrUsage()
 		return nil
@@ -62,6 +64,7 @@ Usage:
   zx scr encode [flags] <image>        convert PNG/JPEG/GIF to .scr
   zx scr decode [flags] <file.scr>     render an .scr back to PNG
   zx scr crop   [flags] <image|.scr>   crop a region (or sprite) to PNG
+  zx scr ocr    [flags] <image|.scr>   recognise on-screen text as plain text
 
 Encode flags:
   -o <file>          output path (default: input base name + .scr)
@@ -100,6 +103,24 @@ Crop flags (exactly one of --cells / --pixels / --auto):
   Output is always PNG.
 
 An image that is not 256x192 requires -resize; without it, encode fails.
+
+OCR flags:
+  -origin <x,y>      pixel offset, within the image, of the display's
+                     top-left corner (default: 0,0; ignored for .scr input,
+                     which is always the native resolution with no border)
+  -scale <n>         pixels per emulated pixel (default: 1; ignored for
+                     .scr input). For a captured emulator window, this is
+                     usually the window's own render scale -- e.g. CSpect's
+                     -w3 renders at 3x, with a further 32-pixel (32*scale)
+                     border on every side of the 256x192 display before any
+                     window chrome.
+  -o <file>          output path for the recognised text (default: stdout)
+
+  Recognition matches each 8x8 character cell against the real ZX Spectrum
+  ROM font (codes 32-127). Content outside that set -- box-drawing borders,
+  UDGs, decorative graphics -- is matched to its nearest visual
+  approximation rather than skipped, so garbage characters in a
+  non-textual region of the screen are expected, not a bug.
 `)
 }
 
@@ -466,6 +487,70 @@ func parseResizeMode(s string) (scr.ResizeMode, error) {
 	default:
 		return scr.ResizeNone, fmt.Errorf("unknown resize mode %q (want stretch, bestfit, or centre)", s)
 	}
+}
+
+func scrOCR(args []string) error {
+	fs := flag.NewFlagSet("scr ocr", flag.ContinueOnError)
+	origin := fs.String("origin", "", "pixel offset x,y of the display's top-left corner (default 0,0)")
+	scale := fs.Int("scale", 1, "pixels per emulated pixel")
+	out := fs.String("o", "", "output path for recognised text (default: stdout)")
+	args = permuteArgs(args, map[string]bool{})
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		scrUsage()
+		return fmt.Errorf("ocr needs exactly one input image")
+	}
+	inPath := fs.Arg(0)
+
+	raw, err := os.ReadFile(inPath)
+	if err != nil {
+		return err
+	}
+
+	var lines []string
+	if len(raw) == scr.FileLen {
+		// A .scr file is always exactly the native 256x192 pixels, so no
+		// geometry flags apply -- flag them as a mistake rather than
+		// silently ignoring what the user asked for.
+		if *origin != "" || *scale != 1 {
+			return fmt.Errorf("ocr: --origin and --scale do not apply to .scr input (already native resolution)")
+		}
+		screen, derr := scr.Decode(raw)
+		if derr != nil {
+			return derr
+		}
+		lines, err = scr.RecognizeScreen(screen)
+	} else {
+		img, _, derr := image.Decode(strings.NewReader(string(raw)))
+		if derr != nil {
+			return fmt.Errorf("decoding %s: %w", inPath, derr)
+		}
+		geom := scr.Geometry{OriginX: 0, OriginY: 0, Scale: *scale}
+		if *origin != "" {
+			x, y, oerr := parsePair(*origin)
+			if oerr != nil {
+				return fmt.Errorf("ocr --origin: %w", oerr)
+			}
+			geom.OriginX, geom.OriginY = x, y
+		}
+		lines, err = scr.RecognizeText(img, geom)
+	}
+	if err != nil {
+		return err
+	}
+
+	text := strings.Join(lines, "\n") + "\n"
+	if *out == "" {
+		fmt.Print(text)
+		return nil
+	}
+	if werr := os.WriteFile(*out, []byte(text), 0644); werr != nil {
+		return werr
+	}
+	fmt.Printf("wrote %s\n", *out)
+	return nil
 }
 
 func scrOutBase(path string) string {

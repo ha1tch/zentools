@@ -20,6 +20,7 @@ For the programmatic interface behind these tools, see the
   - [zx tap](#zx-tap)
   - [zx tzx](#zx-tzx)
   - [zx basic](#zx-basic)
+  - [zx scr](#zx-scr)
   - [zx snap](#zx-snap)
   - [zx convert](#zx-convert)
   - [zx info](#zx-info)
@@ -249,6 +250,69 @@ zx basic detokenise <input.bin> [-o out.bas]
 Matching is case-independent by default; `--case-sensitive` requires exact
 keyword case. `detokenise` does the reverse, printing to standard output unless
 `-o` is given.
+
+### zx scr
+
+```
+zx scr encode [flags] <image>              PNG/JPEG/GIF -> .scr
+zx scr decode [flags] <file.scr>           .scr -> PNG
+zx scr crop   [flags] <image|.scr>         crop a region (or sprite) to PNG
+zx scr cut    [flags] <file.scr>           extract a sub-region into a .cut asset collection
+zx scr paste  [flags] <collection:name> <target.scr>   paste an asset into a screen
+zx scr ls     <file.cut>                   list a .cut collection's assets
+zx scr atlas  [flags] <file.cut>           render a collection as a labelled contact sheet
+zx scr fromsnap [flags] <file.sna|file.z80>   extract a snapshot's display file as .scr
+zx scr ocr    [flags] <image|.scr>         recognise on-screen text as plain text
+```
+
+A `.scr` file is the raw ZX Spectrum display: 6912 bytes, the pixel bitmap
+followed by the per-8x8-cell colour attributes, exactly as they sit in
+Spectrum RAM at `0x4000`-`0x5AFF`. `encode` and `decode` convert to and from
+ordinary images, `crop` extracts a region (or, for a `.scr`, a sprite's
+bounding box) as PNG, and `fromsnap` pulls the display straight out of a
+snapshot without needing a running machine.
+
+`cut`, `paste`, `ls`, and `atlas` manage `.cut` files: named collections of
+extracted regions (sprites, tiles, UI panels) pulled from one or more `.scr`
+screens, with sub-region reuse across a project in mind. `cut` adds a named
+region to a collection (creating it if it doesn't exist); `paste` composites
+a collection's asset back onto a target screen at a given position, with a
+bit operation (`or`/`and`/`copy`/`xor`) and an optional mask asset for
+non-rectangular shapes; `ls` lists a collection's contents; `atlas` renders
+the whole collection as a labelled contact-sheet PNG for a visual overview.
+
+`ocr` recognises the text on a screen — matching each 8x8 character cell
+against the real Spectrum ROM font — and prints it as plain text. This
+exists for driving emulators through captured screenshots: an automated
+session can send input, capture the screen, and read back exactly what
+printed, rather than a human reading each captured image by eye. A `.scr`
+file needs no further flags (it is always exactly the native 256x192
+pixels); an arbitrary screenshot — an emulator window, scaled and offset
+within a larger capture — needs `--origin` (the display's top-left pixel
+within the image) and `--scale` (pixels per emulated pixel) to say where the
+256x192 display actually sits. Recognition matches each cell against the
+standard 96-glyph ROM set (codes 32-127); content outside that set —
+box-drawing borders, UDGs, decorative graphics — is matched to its nearest
+visual approximation rather than skipped, so garbage characters in a
+non-textual region of the screen are expected, not a bug.
+
+Example — read the text off a captured CSpect window, rendered at `-w3`
+(3x scale, with the classic 32-pixel border also scaled 3x before any
+window chrome):
+
+```
+zx scr ocr --origin=256,112 --scale=3 screenshot.png
+```
+
+Example — read a `.scr` file directly, no geometry needed:
+
+```
+zx scr ocr screen.scr
+```
+
+Run `zx scr -h` for the full flag reference, including `crop`'s pixel- vs
+cell-based region syntax and `--auto` sprite-extent detection, and `cut`'s
+attribute and mask options.
 
 ### zx snap
 

@@ -37,11 +37,11 @@ const (
 
 // Hardware IDs within the Computers category (HWComputers).
 const (
-	HWIDSpectrum16K       = 0x00
-	HWIDSpectrum48K       = 0x01 // 48k, Plus
-	HWIDSpectrum48KIssue1 = 0x02
-	HWIDSpectrum128K      = 0x03 // 128k + (Sinclair)
-	HWIDSpectrum128KPlus2 = 0x04 // 128k +2 (grey case)
+	HWIDSpectrum16K         = 0x00
+	HWIDSpectrum48K         = 0x01 // 48k, Plus
+	HWIDSpectrum48KIssue1   = 0x02
+	HWIDSpectrum128K        = 0x03 // 128k + (Sinclair)
+	HWIDSpectrum128KPlus2   = 0x04 // 128k +2 (grey case)
 	HWIDSpectrumPlus2APlus3 = 0x05 // 128k +2A, +3
 )
 

@@ -28,10 +28,10 @@ const (
 	flagData   = 0xFF
 
 	// Block (file) types, as stored in a header block's type byte.
-	TypeProgram = 0x00
-	TypeNumArray = 0x01
+	TypeProgram   = 0x00
+	TypeNumArray  = 0x01
 	TypeCharArray = 0x02
-	TypeCode    = 0x03
+	TypeCode      = 0x03
 )
 
 // xorChecksum returns the XOR of all bytes, the checksum used by Spectrum tape
@@ -140,30 +140,56 @@ func Decode(image []byte) ([]Block, error) {
 		raw := image[pos : pos+blockLen]
 		pos += blockLen
 
-		flag := raw[0]
-		stored := raw[blockLen-1]
-		body := raw[1 : blockLen-1] // between flag and checksum
-		calc := xorChecksum(raw[:blockLen-1])
-
-		b := Block{
-			Flag:       flag,
-			Checksum:   stored,
-			ChecksumOK: calc == stored,
-			Data:       body,
-		}
-
-		// A standard header is flag 0x00 with a 0x13-length block.
-		if flag == flagHeader && blockLen == headerLength {
-			b.IsHeader = true
-			b.Type = body[0]
-			b.Name = strings.TrimRight(string(body[1:11]), " ")
-			b.DataLength = binary.LittleEndian.Uint16(body[11:13])
-			b.Param1 = binary.LittleEndian.Uint16(body[13:15])
-			b.Param2 = binary.LittleEndian.Uint16(body[15:17])
+		b, err := DecodeBlock(raw)
+		if err != nil {
+			// DecodeBlock's own length checks can't actually fail here --
+			// blockLen was already validated above -- but propagate
+			// rather than silently ignore, in case that ever changes.
+			return blocks, fmt.Errorf("block at offset %d: %w", pos-blockLen, err)
 		}
 		blocks = append(blocks, b)
 	}
 	return blocks, nil
+}
+
+// DecodeBlock parses a single raw Spectrum tape block -- flag byte,
+// payload, checksum byte, with no length prefix -- into a Block. This is
+// exactly what Decode does for each length-prefixed block it finds in a
+// .tap file, factored out because the same raw shape shows up unprefixed
+// elsewhere: a TZX 0x10 (standard-speed data) block's own payload *is* a
+// TAP-format block's raw bytes (flag+payload+checksum), just carried in a
+// TZX container with its own, separately-encoded length instead of TAP's
+// length prefix. A caller with such bytes in hand -- from pkg/tzx, or any
+// other source -- can get the same parsed Type/Name/DataLength fields
+// this package already computes here, rather than re-deriving them by
+// hand.
+func DecodeBlock(raw []byte) (Block, error) {
+	if len(raw) < 2 {
+		return Block{}, fmt.Errorf("block too short (%d bytes, need at least 2 for flag+checksum)", len(raw))
+	}
+
+	flag := raw[0]
+	stored := raw[len(raw)-1]
+	body := raw[1 : len(raw)-1] // between flag and checksum
+	calc := xorChecksum(raw[:len(raw)-1])
+
+	b := Block{
+		Flag:       flag,
+		Checksum:   stored,
+		ChecksumOK: calc == stored,
+		Data:       body,
+	}
+
+	// A standard header is flag 0x00 with a 0x13-length block.
+	if flag == flagHeader && len(raw) == headerLength {
+		b.IsHeader = true
+		b.Type = body[0]
+		b.Name = strings.TrimRight(string(body[1:11]), " ")
+		b.DataLength = binary.LittleEndian.Uint16(body[11:13])
+		b.Param1 = binary.LittleEndian.Uint16(body[13:15])
+		b.Param2 = binary.LittleEndian.Uint16(body[15:17])
+	}
+	return b, nil
 }
 
 // EncodeCode returns the bytes of a TAP file holding a single CODE block: a

@@ -14,6 +14,7 @@ For the command-line tools built on these packages, see the
 - [pkg/tap](#pkgtap)
 - [pkg/tzx](#pkgtzx)
 - [pkg/basic](#pkgbasic)
+- [pkg/scr](#pkgscr)
 - [pkg/snapshot](#pkgsnapshot)
 - [pkg/build](#pkgbuild)
 - [pkg/version](#pkgversion)
@@ -230,6 +231,71 @@ import "github.com/ha1tch/zentools/pkg/basic"
 
 tokens, err := basic.Tokenise("10 PRINT \"HELLO\"\n")
 text, err := basic.Detokenise(tokens)
+```
+
+## pkg/scr
+
+Reads and writes ZX Spectrum `.scr` screen files (the raw display: 6912
+bytes, pixel bitmap plus per-cell colour attributes, exactly as they sit in
+Spectrum RAM), converts between `.scr` and ordinary images, and manages
+`.cut` asset collections (named sub-regions cut from one or more screens,
+for sprite/tile reuse). The package's core types are `Screen`, `Attribute`,
+`Collection`, and `Asset`; `Encode`/`Decode` convert to and from raw bytes,
+`FromImage`/`ToImage` convert to and from `image.Image`, and `Fit` handles
+resizing an arbitrary source image to the native 256x192 before encoding.
+This manual does not yet cover that surface in full — see the package's own
+doc comments and [the CLI manual's `zx scr` section](CLI.md#zx-scr) for a
+complete tour of what's there.
+
+### OCR
+
+Recognises the text on a screen by matching each 8x8 character cell against
+the real Spectrum ROM font, returning it as plain lines of text.
+
+```go
+func RecognizeScreen(s *Screen) ([]string, error)
+func RecognizeText(img image.Image, geom Geometry) ([]string, error)
+
+type Geometry struct {
+	OriginX int
+	OriginY int
+	Scale   int
+}
+
+var NativeGeometry = Geometry{OriginX: 0, OriginY: 0, Scale: 1}
+```
+
+`RecognizeScreen` takes an already-decoded `Screen` directly; since a
+`Screen` is always exactly the native 256x192 pixels, no geometry is
+needed. `RecognizeText` is the general form, for any `image.Image` — most
+often a captured emulator window screenshot, where the 256x192 display sits
+at some offset and scale within a larger image. `NativeGeometry` is the
+identity case (origin 0,0, scale 1), for an image that already *is* the raw
+256x192 display, pixel for pixel.
+
+Both return 24 lines of text, one per character row, each right-trimmed of
+trailing spaces. Recognition matches every cell against the standard
+96-glyph ROM set (codes 32-127); a cell containing something outside that
+set — a box-drawing border, a UDG, decorative graphics — is matched to its
+nearest visual approximation rather than skipped, so a caller reading a
+region that mixes text and graphics should expect some garbage characters
+there rather than blanks.
+
+### Example
+
+```go
+import "github.com/ha1tch/zentools/pkg/scr"
+
+// A .scr file: no geometry needed.
+data, _ := os.ReadFile("screen.scr")
+screen, _ := scr.Decode(data)
+lines, _ := scr.RecognizeScreen(screen)
+
+// A captured emulator window: say where the display sits.
+f, _ := os.Open("screenshot.png")
+img, _ := png.Decode(f)
+geom := scr.Geometry{OriginX: 256, OriginY: 112, Scale: 3}
+lines, _ = scr.RecognizeText(img, geom)
 ```
 
 ## pkg/snapshot
