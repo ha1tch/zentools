@@ -2,9 +2,9 @@
 //
 // Where the individual tools (maketap, totap, loadtap, tap2tzx) preserve the
 // historical zxgotools interfaces, zx is organised by format: each subcommand
-// names a noun (tap, tzx, basic, snap) or an action over formats (info), and
-// exposes capabilities those older tools could not, such as creating snapshots
-// and converting between formats.
+// names a noun (tap, tzx, pzx, basic, snap, rzx) or an action over formats
+// (info), and exposes capabilities those older tools could not, such as
+// creating snapshots and converting between formats.
 //
 // Usage:
 //
@@ -14,8 +14,10 @@
 //
 //	tap     create and inspect TAP tape images
 //	tzx     create and inspect TZX tape images
+//	pzx     create and inspect PZX tape images
 //	basic   tokenise and detokenise ZX BASIC
-//	snap    create and inspect .sna / .z80 snapshots
+//	snap    create and inspect .sna / .z80 / .szx snapshots
+//	rzx     inspect RZX input-recording files
 //	info    auto-detect a file's format and summarise it
 //	version print the zentools version
 package main
@@ -42,14 +44,22 @@ func main() {
 		err = cmdTAP(args)
 	case "tzx":
 		err = cmdTZX(args)
+	case "pzx":
+		err = cmdPZX(args)
 	case "basic":
 		err = cmdBASIC(args)
 	case "snap":
 		err = cmdSnap(args)
+	case "rzx":
+		err = cmdRZX(args)
 	case "info":
 		err = cmdInfo(args)
 	case "convert":
 		err = cmdConvert(args)
+	case "edit":
+		err = cmdEdit(args)
+	case "build":
+		err = cmdBuild(args)
 	case "scr":
 		err = cmdSCR(args)
 	case "version", "-v", "--version":
@@ -76,9 +86,13 @@ Usage: zx <command> [arguments]
 Commands:
   tap     create and inspect TAP tape images
   tzx     create and inspect TZX tape images
+  pzx     create and inspect PZX tape images
   basic   tokenise and detokenise ZX BASIC
-  snap    create and inspect .sna / .z80 snapshots
+  snap    create and inspect .sna / .z80 / .szx snapshots
+  rzx     inspect RZX input-recording files
   convert convert between tape and snapshot formats
+  edit    list, extract, delete, or import blocks in a multi-block tape
+  build   build a multi-block tape file from a JSON specification
   scr     convert images to/from SCR screen files
   info    auto-detect a file's format and summarise it
   version print the zentools version

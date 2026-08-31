@@ -4,6 +4,236 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.3] - 2026-08-31
+
+### Fixed
+
+- `docs/SPRITE-HANDLING.md`'s compositing section rewritten to use only
+  `zx scr` commands -- the previous version fell back to Python/PIL for
+  image-level compositing, which had no place in a manual for this
+  project's own tool. Tracing `pkg/scr`'s actual `Paste` implementation
+  showed the fallback was unnecessary in the first place: a `color`
+  chunk (the default `cut` output) pasted at a cell-aligned `--at`
+  position (`x%8==0 && y%8==0`) writes its own attributes to the
+  target directly. The earlier "attribute clash" example had paste
+  positions that weren't cell-aligned, which is what actually produced
+  the invisible result, not a real limitation of `paste` itself.
+- Two more composited example screens added, reusing the same
+  `assets.cut` collection with different `paste` arrangements, and a
+  `--bitmap-only` mono-chunk example demonstrating the real,
+  intentional case for attribute inheritance.
+- The former `booth` chunk renamed to `window_red`, with a matching
+  `window_white` cut alongside it -- both single-window tiles meant to
+  be repeated in a grid, the same construction the reference artwork's
+  own building actually uses. The third example scene rebuilt around
+  this: two houses, one bigger than the other, each assembled from
+  repeated window tiles rather than one building-sized chunk.
+
+## [0.8.2] - 2026-08-31
+
+### Added
+
+- **`Makefile`**: `build`/`install` (all five commands), `test`
+  (`-race`, matching CI exactly), `vet`/`fmt`/`fmt-check`/`lint`,
+  `cover`, `tidy`/`verify`, `clean`, `release` (wraps `release.sh`),
+  `cross-build`/`dist` (all 15 targets `cross-build.yml` covers), and
+  a self-documenting `help`. The project never had one before.
+
+### Fixed
+
+- The three remaining `gofmt` issues (`pkg/build/build_test.go`,
+  `pkg/snapshot/sna_test.go`, `pkg/snapshot/z80_test.go`) -- purely
+  mechanical (struct alignment, blank-line removal, single-line-if
+  expansion), no semantic change. The repo is now genuinely
+  `gofmt`-clean throughout.
+- `release.sh`'s own checkpoint-zip exclude list never excluded
+  `dist/`, so running `make cross-build` before a release swept all
+  75 cross-compiled binaries into the checkpoint (a 149MB zip instead
+  of the usual ~600KB). Never triggered before `dist/` existed
+  locally; fixed now.
+- `docs/SPRITE-HANDLING.md`: removed a numpy/`scipy.ndimage`-based
+  boundary-measurement section that had no business being in a
+  user-facing manual -- that was a description of how this session
+  measured tile boundaries while writing the tutorial, not an
+  instruction for zentools' own users, who already know where they
+  put their own graphics. The `zx scr` command examples themselves
+  (`cut`, `atlas`, `paste`, the compositing walkthrough) are
+  unchanged.
+
+## [0.8.1] - 2026-08-31
+
+### Added
+
+- **`zx edit`**: `list` (plain and `--json`, sharing `zx convert
+  --outdir`'s own manifest shape), `extract` (a block's payload, or
+  `--raw` for the full flag+payload+checksum block), `delete`
+  (single or comma-separated indices, against the tape's original
+  numbering), `import` (a fresh `code`/`program` header+data pair, or
+  `--raw` for an already-encoded block, at `--at N` or appended), and
+  `append` (concatenate two or more tape files' own block lists, any
+  mix of `tap`/`tzx`/`pzx`, into one output). All built on the same
+  `[]tap.Block` list and the same encoders `zx convert`'s own tape
+  normalisation already uses.
+- **`zx build`**: build a multi-block tape from a JSON specification
+  (`code`/`program`/`raw` block kinds; `file` paths resolve relative
+  to the spec's own directory) -- the declarative counterpart to `zx
+  edit`'s incremental operations.
+- **`zx tap append`**: concatenate TAP files by raw byte
+  concatenation -- TAP has no container structure of its own, so this
+  needs no decode/re-encode round trip, unlike the general `zx edit
+  append`.
+- **Two new manuals**: [`docs/TAPE-HANDLING.md`](docs/TAPE-HANDLING.md),
+  a full tutorial assembling a multi-block tape from BASIC, code, and
+  tile/screen parts; [`docs/SPRITE-HANDLING.md`](docs/SPRITE-HANDLING.md),
+  a tutorial on `zx scr`'s cut/paste/atlas workflow, including a
+  numpy-based precise-boundary-measurement technique and a from-first-
+  principles look at Spectrum attribute clash. Both illustrated with
+  real screenshots in `docs/images/`.
+- **HTML renderings** of all six manuals (`docs/*.html`, parallel to
+  their `.md` sources), styled in the genuine Spectrum 8-colour
+  palette, built with `docs/template.html`/`docs/zsp.css`.
+
+### Fixed
+
+- `docs/CLI.md` brought current: `zx pzx`, `zx rzx`, `zx edit`, `zx
+  build` were entirely undocumented; the `zx convert` reference was
+  missing most of its own flags (`--block`, `--org`, `--length`,
+  `--bank`, `--origin`, `--name`, `--outdir`); the conversions-in-depth
+  matrix only covered four of the now eight source/target kinds.
+
+## [0.8.0] - 2026-08-31
+
+### Added
+
+- **`zx convert`**: `RZX → tap`/`tzx`/`pzx`, extracting the first embedded
+  snapshot's user RAM the same way `sna`/`z80`/`szx → tape` already does
+  (same registers/interrupt-state loss, same warning). The one remaining
+  buildable gap from the RZX/PZX/SZX work: everything else an RZX could
+  reasonably convert to was already wired up.
+- **`zx convert --outdir`**: explode a multi-block tape (`tap`/`tzx`/`pzx`)
+  into a directory -- one `.bin` per data block (named after its header
+  when it has one, index-only for a bare/headerless block), plus
+  `manifest.json` describing every block, header and data alike, in
+  order with checksum status and header attribution.
+- **`zx convert`**: `bin` as a source, not just a target -- `bin → tap`/
+  `tzx`/`pzx`/`sna`/`z80`/`szx` via `--origin`/`--name`/`--start`,
+  reachable through the same dispatch as every other conversion rather
+  than only through the dedicated `make` commands.
+- **`zx convert`**: a `PAGING` block (2 bytes: port `7FFD`, then port
+  `1FFD`) alongside the existing per-bank blocks when a 128K-family
+  snapshot converts to a tape format, so which bank was actually paged
+  in survives the trip -- a tape format has no field of its own for it,
+  but nothing stops a small dedicated metadata block, the same
+  convention TZX itself uses for non-audio information.
+- **`zx convert`**: a warning when a real (non-zero) port `1FFD` value is
+  about to be silently dropped converting to `sna` specifically -- `.sna`
+  genuinely has no field for the +3's secondary paging port (confirmed
+  directly against `pkg/snapshot`'s own encoder/decoder), so the loss
+  itself isn't fixable, but it no longer happens silently.
+
+### Fixed
+
+- **`zx convert`**: `PZX → tap`/`tzx`/`sna`/`z80`/`szx` no longer requires
+  the source to use this package's own exact standard-timing pulse
+  constants. A `DATA` block's payload is already fully-resolved bytes by
+  the time PZX's own decoder produces it, regardless of what pulse
+  timing represented them physically on tape -- a real, well-formed
+  turbo-loader capture converts now, where it was previously silently
+  dropped. The one place that already worked this way, `PZX → bin`,
+  is what proved the fix.
+- **`zx convert`**: `TZX → tap`/`pzx`/`sna`/`z80`/`szx`/`bin` now reads
+  `0x11` (Turbo Speed Data) and `0x14` (Pure Data) blocks, not only
+  `0x10` -- `pkg/tzx`'s own doc comment on `Block.Data` already said
+  `0x11` "holds the raw payload bytes themselves, the same field `0x10`
+  uses", which the conversion code simply hadn't acted on. Any real TZX
+  using a turbo loader -- a large fraction of commercial tapes, which is
+  the entire reason turbo loaders exist -- previously lost its data
+  blocks converting to anything else.
+- **`zx convert`**: same-format "conversion" (source and target the same
+  format) is now rejected outright rather than silently copying the file
+  or silently re-processing it through lossy normalisation. The latter
+  was a real bug (`TZX → TZX`, and, before an adjacent fix, `PZX → PZX`,
+  both went through timing-based filtering even though nothing should be
+  lost for a same-format no-op) that a same-format identity pass would
+  have papered over without actually fixing.
+- **`zx convert`**: `TAP`/`SNA`/`Z80`/`SZX → pzx` no longer silently
+  produces a TZX-encoded file under a `.pzx` name. Two independent
+  instances of the identical bug -- `convertTapeToTape` and
+  `convertSnapToTape` each had a `case "tap"` and otherwise assumed
+  `"tzx"`, with no case for `"pzx"` even though it had been a valid tape
+  format for several releases.
+
+## [0.7.0] - 2026-08-31
+
+### Added
+
+- **`pkg/szx`: read and write `.szx` (zx-state) snapshots**, spec v1.5
+  (https://www.spectaculator.com/docs/zx-state/intro.html). Decodes into
+  and encodes from the same neutral `snapshot.MachineState` the SNA and
+  `.z80` codecs already use -- a third codec for one type, not a separate
+  representation. Covers the four blocks every snapshot needs
+  (`ZXSTCREATOR`, `ZXSTZ80REGS`, `ZXSTSPECREGS`, `ZXSTRAMPAGE`, the last
+  zlib-compressed); the spec's thirty-odd further peripheral block types
+  (AY sound, joysticks, disk controllers, speech synthesis, and so on)
+  are skipped on read rather than modelled, per the spec's own rule for
+  unrecognised blocks. A file naming a machine model
+  `snapshot.Model` doesn't represent (Pentagon 512/1024, Scorpion, Timex
+  variants) or a RAM page beyond 7 is rejected with a clear error rather
+  than partially read.
+- **`pkg/rzx`: read and write `.rzx` input-recording files**, spec v0.13
+  (https://worldofspectrum.net/RZXformat.html). Blocks decode into an
+  ordered `[]Block`, not separated by type, since a real multiload
+  recording legitimately interleaves Snapshot and Recording blocks and
+  that sequence is part of the file's meaning. Creator, Snapshot
+  (zlib-compressed), and Recording blocks (the actual frame-by-frame CPU
+  `IN`-result log, zlib-compressed, with the "repeated frame" idle-frame
+  optimisation) are fully supported. The DSA Security Information and
+  Security Signature blocks used for tournament submissions are decoded
+  into their raw fields (OpenPGP multi-precision-integer format for the
+  signature) and re-encoded verbatim, but this package does not
+  implement DSA signing or verification -- the spec's own security
+  chapter calls itself "obsolete info, needs updating to DSA", and
+  verifiable cryptographic signing is a different undertaking from
+  reading and writing the container.
+- **`pkg/pzx`: read and write `.pzx` tape files**, spec v1.0
+  (http://zxds.raxoft.cz/docs/pzx.txt), Patrik Rak's simpler successor to
+  TZX. All four mandatory block types (`PZXT`, `PULS`, `DATA`, `PAUS`)
+  plus the two the spec calls out as should-be-supported (`BRWS`,
+  `STOP`) are implemented, including the bit-packed pulse/duration
+  encoding (an optional repeat-count prefix, and an extended-duration
+  form for values over 15 bits) exactly as the spec's own decode
+  pseudocode defines it -- including a real, easy-to-miss edge case the
+  spec itself warns about and an early version of this implementation
+  got wrong: a duration needing the full extended form must carry an
+  explicit repeat-count prefix even when the count is 1, or the decoder
+  cannot distinguish the extension prefix from a genuine repeat count.
+  Caught by a round-trip test on the format's maximum duration value,
+  not by inspection. Unrecognised block tags (the spec reserves
+  lowercase tags for custom extensions) are preserved as raw bytes on
+  decode and re-emitted verbatim, rather than dropped.
+
+## [0.6.1] - 2026-08-31
+
+### Fixed
+
+- **`pkg/snapshot`: `EncodeSNA128` no longer silently produces a
+  malformed image when `Paging.Port7FFD` selects bank 2 or bank 5 for
+  the `0xC000` window** -- a real, valid hardware state (nothing in the
+  128K paging hardware prevents aliasing an always-fixed bank into the
+  switchable window too), but one the fixed 131103-byte `.sna128`
+  layout has no documented way to represent losslessly: the format's
+  own "remaining five banks" trailer section is only five banks wide,
+  which assumes the paged bank is distinct from banks 5 and 2. When it
+  isn't, the previous implementation wrote that bank's content twice
+  (once as the fixed bank, once again as "the paged bank") and produced
+  an image exactly one 16K bank too large (147487 bytes instead of
+  131103) -- which `DecodeSNA128`'s own strict length check would then
+  reject as "wrong size", a confusing failure two steps removed from
+  its actual cause. `EncodeSNA128` now returns a clear error naming the
+  aliased bank and address instead of guessing at an undocumented
+  corner of a community-reverse-engineered format. Found and reported
+  via real-world use in `github.com/ha1tch/zendis`.
+
 ## [0.6.0] - 2026-08-23
 
 ### Added

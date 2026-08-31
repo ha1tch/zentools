@@ -37,9 +37,13 @@ func TestZ80RoundTrip(t *testing.T) {
 		}
 	}
 	img, err := EncodeZ80(s)
-	if err != nil { t.Fatalf("EncodeZ80: %v", err) }
+	if err != nil {
+		t.Fatalf("EncodeZ80: %v", err)
+	}
 	out, err := DecodeZ80(img)
-	if err != nil { t.Fatalf("DecodeZ80: %v", err) }
+	if err != nil {
+		t.Fatalf("DecodeZ80: %v", err)
+	}
 
 	if out.CPU.AF != s.CPU.AF || out.CPU.PC != s.CPU.PC || out.CPU.SP != s.CPU.SP {
 		t.Errorf("regs: AF=0x%04X PC=0x%04X SP=0x%04X", out.CPU.AF, out.CPU.PC, out.CPU.SP)

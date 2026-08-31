@@ -150,11 +150,29 @@ func readWordAtSpectrumAddr(ram48 []byte, addr uint16) (uint16, error) {
 const sna128Len = 27 + 8*16384 + 4 // 131103
 
 // EncodeSNA128 encodes a 128K MachineState as a 128K .sna image.
+//
+// Returns an error if Paging.Port7FFD selects bank 2 or bank 5 for the
+// 0xC000 window. Nothing in the 128K paging hardware prevents this --
+// real hardware genuinely can page either always-fixed bank into
+// 0xC000 too, aliasing the same physical RAM at two addresses at once
+// -- but the fixed 131103-byte .sna128 layout this function and
+// DecodeSNA128 both assume has no room to represent it losslessly:
+// the format's own "remaining five banks" trailer section only holds
+// five banks, one for every bank except {5, 2, paged}, which is only
+// five distinct banks when paged is not itself 5 or 2. When it is,
+// there are only two banks to exclude, not three, and no documented
+// convention for what the remaining section should then contain
+// without either duplicating data or silently losing a bank. Refusing
+// is safer than guessing at an undocumented corner of a
+// community-reverse-engineered format.
 func EncodeSNA128(s *MachineState) ([]byte, error) {
 	if !s.Model.Is128KFamily() {
 		return nil, fmt.Errorf("EncodeSNA128 requires a 128K-family model")
 	}
 	pagedBank := s.Paging.Port7FFD & 0x07
+	if pagedBank == 2 || pagedBank == 5 {
+		return nil, fmt.Errorf("EncodeSNA128: Port7FFD selects bank %d for 0xC000, aliasing the always-fixed bank at 0x%04X -- the 128K .sna format has no documented way to represent this losslessly", pagedBank, map[uint8]int{2: 0x8000, 5: 0x4000}[pagedBank])
+	}
 
 	out := make([]byte, 0, sna128Len)
 

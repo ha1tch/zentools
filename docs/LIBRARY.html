@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LIBRARY manual — zentools</title>
+<link rel="stylesheet" href="zsp.css">
+</head>
+<body>
+<div class="zsp-border">
+<div class="zsp-page">
+<div class="zsp-nav">
+<a href="CLI.html">CLI manual</a><a href="TAPE-HANDLING.html">Tape handling</a><a href="SPRITE-HANDLING.html">Sprite handling</a><a href="LIBRARY.html">Library</a><a href="ARCHITECTURE.html">Architecture</a><a href="MIGRATION-STATUS.html">Migration status</a>
+</div>
+<div class="zsp-kicker">zentools manual</div>
+<h1 id="zentools-library-manual">zentools library manual</h1>
+<p>The zentools library is a set of Go packages for reading, writing,
+and converting ZX Spectrum file formats in memory. Every package depends
+only on the Go standard library. This manual describes each package, its
+principal types and functions, and how they compose.</p>
+<p>For the command-line tools built on these packages, see the <a
+href="CLI.html">CLI tools manual</a>.</p>
+<h2 id="contents">Contents</h2>
+<ul>
+<li><a href="#overview">Overview</a></li>
+<li><a href="#pkgtap">pkg/tap</a></li>
+<li><a href="#pkgtzx">pkg/tzx</a></li>
+<li><a href="#pkgbasic">pkg/basic</a></li>
+<li><a href="#pkgscr">pkg/scr</a></li>
+<li><a href="#pkgsnapshot">pkg/snapshot</a></li>
+<li><a href="#pkgbuild">pkg/build</a></li>
+<li><a href="#pkgversion">pkg/version</a></li>
+<li><a href="#composing-the-packages">Composing the packages</a></li>
+</ul>
+<h2 id="overview">Overview</h2>
+<p>The import path root is <code>github.com/ha1tch/zentools</code>. Each
+package owns one format family:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Package</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>pkg/tap</code></td>
+<td>TAP tape images.</td>
+</tr>
+<tr class="even">
+<td><code>pkg/tzx</code></td>
+<td>TZX tape images.</td>
+</tr>
+<tr class="odd">
+<td><code>pkg/basic</code></td>
+<td>ZX BASIC tokenisation and detokenisation.</td>
+</tr>
+<tr class="even">
+<td><code>pkg/snapshot</code></td>
+<td><code>.sna</code> and <code>.z80</code> snapshots, via a neutral
+state type.</td>
+</tr>
+<tr class="odd">
+<td><code>pkg/build</code></td>
+<td>Overlaying code onto a boot state to emit artifacts.</td>
+</tr>
+<tr class="even">
+<td><code>pkg/version</code></td>
+<td>The library version constant.</td>
+</tr>
+</tbody>
+</table>
+<p>The packages do not import one another except that
+<code>pkg/build</code> builds on <code>tap</code>, <code>tzx</code>,
+<code>basic</code>, and <code>snapshot</code>. A typical flow runs from
+source material (a binary or BASIC text), through <code>build</code>,
+out to a tape or snapshot format.</p>
+<p>Install with:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">go</span> get github.com/ha1tch/zentools@latest</span></code></pre></div>
+<p>Requires Go 1.25 or later.</p>
+<h2 id="pkgtap">pkg/tap</h2>
+<p>Reads and writes TAP tape images. A TAP image is a sequence of
+length-prefixed blocks; each program is represented by a header block
+followed by a data block.</p>
+<h3 id="encoding">Encoding</h3>
+<div class="sourceCode" id="cb2"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> EncodeCode<span class="op">(</span>name <span class="dt">string</span><span class="op">,</span> data <span class="op">[]</span><span class="dt">byte</span><span class="op">,</span> loadAddress <span class="dt">uint16</span><span class="op">)</span> <span class="op">[]</span><span class="dt">byte</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> EncodeProgram<span class="op">(</span>name <span class="dt">string</span><span class="op">,</span> data <span class="op">[]</span><span class="dt">byte</span><span class="op">,</span> autostart <span class="dt">uint16</span><span class="op">)</span> <span class="op">[]</span><span class="dt">byte</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> WriteCodeFile<span class="op">(</span>inputPath<span class="op">,</span> outputPath<span class="op">,</span> name <span class="dt">string</span><span class="op">,</span> loadAddress <span class="dt">uint16</span><span class="op">)</span> <span class="dt">error</span></span></code></pre></div>
+<p><code>EncodeCode</code> returns the complete TAP bytes for a CODE
+block — a header naming the block and recording its load address,
+followed by the data. <code>EncodeProgram</code> does the same for a
+BASIC Program block, recording an auto-run line in place of a load
+address. <code>WriteCodeFile</code> is a file-to-file convenience
+wrapper around <code>EncodeCode</code>.</p>
+<p>The CODE-block encoding is verified byte-identical to pasmo's
+<code>--tap</code> output.</p>
+<h3 id="decoding">Decoding</h3>
+<div class="sourceCode" id="cb3"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> Decode<span class="op">(</span>image <span class="op">[]</span><span class="dt">byte</span><span class="op">)</span> <span class="op">([]</span>Block<span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span></code></pre></div>
+<p><code>Decode</code> parses a TAP image into its blocks:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">type</span> Block <span class="kw">struct</span> <span class="op">{</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    IsHeader   <span class="dt">bool</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    Flag       <span class="dt">byte</span>   <span class="co">// 0x00 for a standard header, 0xFF for standard data</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    Data       <span class="op">[]</span><span class="dt">byte</span> <span class="co">// payload between the flag and the checksum</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    Checksum   <span class="dt">byte</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    ChecksumOK <span class="dt">bool</span>   <span class="co">// whether the stored checksum matches the computed one</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    Type       <span class="dt">byte</span>   <span class="co">// TypeProgram / TypeCode / ...</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    Name       <span class="dt">string</span> <span class="co">// ten-character name, trailing spaces trimmed</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    DataLength <span class="dt">uint16</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    Param1     <span class="dt">uint16</span> <span class="co">// load address (Code) or autostart line (Program)</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    Param2     <span class="dt">uint16</span> <span class="co">// 0x8000 (Code) or program length (Program)</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>The header fields (<code>Type</code>, <code>Name</code>,
+<code>DataLength</code>, <code>Param1</code>, <code>Param2</code>) are
+populated only when <code>IsHeader</code> is true. The block type
+constants are <code>TypeProgram</code> (0x00), <code>TypeNumArray</code>
+(0x01), <code>TypeCharArray</code> (0x02), and <code>TypeCode</code>
+(0x03).</p>
+<h3 id="example">Example</h3>
+<div class="sourceCode" id="cb5"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="st">&quot;github.com/ha1tch/zentools/pkg/tap&quot;</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>image <span class="op">:=</span> tap<span class="op">.</span>EncodeCode<span class="op">(</span><span class="st">&quot;mygame&quot;</span><span class="op">,</span> code<span class="op">,</span> <span class="bn">0x8000</span><span class="op">)</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>os<span class="op">.</span>WriteFile<span class="op">(</span><span class="st">&quot;mygame.tap&quot;</span><span class="op">,</span> image<span class="op">,</span> <span class="bn">0o644</span><span class="op">)</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>blocks<span class="op">,</span> err <span class="op">:=</span> tap<span class="op">.</span>Decode<span class="op">(</span>image<span class="op">)</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> err</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> _<span class="op">,</span> b <span class="op">:=</span> <span class="kw">range</span> blocks <span class="op">{</span></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> b<span class="op">.</span>IsHeader <span class="op">&amp;&amp;</span> b<span class="op">.</span>Type <span class="op">==</span> tap<span class="op">.</span>TypeCode <span class="op">{</span></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>        fmt<span class="op">.</span>Printf<span class="op">(</span><span class="st">&quot;%s loads at 0x%04X</span><span class="ch">\n</span><span class="st">&quot;</span><span class="op">,</span> b<span class="op">.</span>Name<span class="op">,</span> b<span class="op">.</span>Param1<span class="op">)</span></span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h2 id="pkgtzx">pkg/tzx</h2>
+<p>Reads and writes TZX tape images, following the TZX v1.20
+specification. TZX is a richer container than TAP: a signature and
+version header, then typed blocks. A TAP image converts to TZX by
+wrapping each block as a standard-speed (0x10) block; metadata,
+hardware-type, and group blocks can be added around the data.</p>
+<h3 id="encoding-from-a-tap-image">Encoding from a TAP image</h3>
+<div class="sourceCode" id="cb6"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> EncodeFromTAP<span class="op">(</span>tapImage <span class="op">[]</span><span class="dt">byte</span><span class="op">,</span> opts EncodeOptions<span class="op">)</span> <span class="op">([]</span><span class="dt">byte</span><span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span></code></pre></div>
+<p><code>EncodeFromTAP</code> wraps a TAP image as TZX, with optional
+metadata:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="kw">type</span> EncodeOptions <span class="kw">struct</span> <span class="op">{</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    Title       <span class="dt">string</span>         <span class="co">// archive title (0x32)</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    Author      <span class="dt">string</span>         <span class="co">// archive author</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    Year        <span class="dt">string</span>         <span class="co">// year of publication</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>    Description  <span class="dt">string</span>         <span class="co">// a text-description block (0x30)</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>    StopIn48K    <span class="dt">bool</span>           <span class="co">// emit a &quot;stop in 48K mode&quot; block (0x2A)</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>    Pause        <span class="dt">uint16</span>         <span class="co">// pause after each data block, ms</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>    Hardware     <span class="op">[]</span>HardwareInfo <span class="co">// hardware-type block (0x33)</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>    Group        <span class="dt">string</span>         <span class="co">// bracket the data in a named group (0x21/0x22)</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>A <code>HardwareInfo</code> entry names a machine or peripheral and
+the tape's relationship to it:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="kw">type</span> HardwareInfo <span class="kw">struct</span> <span class="op">{</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    Type <span class="dt">byte</span> <span class="co">// category, e.g. HWComputers</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>    ID   <span class="dt">byte</span> <span class="co">// item within the category, e.g. HWIDSpectrum128K</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>    Info <span class="dt">byte</span> <span class="co">// HWInfoRuns / HWInfoUses / HWInfoRunsUnused / HWInfoDoesntRun</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>The package defines the full set of hardware type, identifier, and
+information constants from the specification's reference table.</p>
+<h3 id="the-incremental-writer">The incremental writer</h3>
+<p>For assembling several tape images into one file with structural
+blocks between them, <code>Writer</code> builds a TZX block by
+block:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="kw">type</span> Writer <span class="kw">struct</span> <span class="op">{</span> <span class="co">/* ... */</span> <span class="op">}</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> NewWriter<span class="op">(</span>pause <span class="dt">uint16</span><span class="op">)</span> <span class="op">*</span>Writer</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> <span class="op">(</span>w <span class="op">*</span>Writer<span class="op">)</span> ArchiveInfo<span class="op">(</span>opts EncodeOptions<span class="op">)</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> <span class="op">(</span>w <span class="op">*</span>Writer<span class="op">)</span> Description<span class="op">(</span>desc <span class="dt">string</span><span class="op">)</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> <span class="op">(</span>w <span class="op">*</span>Writer<span class="op">)</span> Hardware<span class="op">(</span>entries <span class="op">[]</span>HardwareInfo<span class="op">)</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> <span class="op">(</span>w <span class="op">*</span>Writer<span class="op">)</span> GroupStart<span class="op">(</span>name <span class="dt">string</span><span class="op">)</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> <span class="op">(</span>w <span class="op">*</span>Writer<span class="op">)</span> GroupEnd<span class="op">()</span></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> <span class="op">(</span>w <span class="op">*</span>Writer<span class="op">)</span> StopIn48K<span class="op">()</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> <span class="op">(</span>w <span class="op">*</span>Writer<span class="op">)</span> AddTAP<span class="op">(</span>tapImage <span class="op">[]</span><span class="dt">byte</span><span class="op">)</span> <span class="dt">error</span></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> <span class="op">(</span>w <span class="op">*</span>Writer<span class="op">)</span> Bytes<span class="op">()</span> <span class="op">[]</span><span class="dt">byte</span></span></code></pre></div>
+<p><code>EncodeFromTAP</code> is itself implemented on top of
+<code>Writer</code>, so the two share one code path. Groups cannot nest;
+the caller pairs each <code>GroupStart</code> with a
+<code>GroupEnd</code>.</p>
+<h3 id="decoding-1">Decoding</h3>
+<div class="sourceCode" id="cb10"><pre
+class="sourceCode go"><code class="sourceCode go"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> Decode<span class="op">(</span>image <span class="op">[]</span><span class="dt">byte</span><span class="op">)</span> <span class="op">([]</span>Block<span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span></code></pre></div>
+<p><code>Decode</code> returns the blocks of a TZX image. The package
+round-trips every block type it writes, so a TZX produced by
+<code>EncodeFromTAP</code> or <code>Writer</code> decodes cleanly.</p>
+<h3 id="example-1">Example</h3>
+<div class="sourceCode" id="cb11"><pre
+class="sourceCode go"><code class="sourceCode go"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="st">&quot;github.com/ha1tch/zentools/pkg/tzx&quot;</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>image<span class="op">,</span> err <span class="op">:=</span> tzx<span class="op">.</span>EncodeFromTAP<span class="op">(</span>tapImage<span class="op">,</span> tzx<span class="op">.</span>EncodeOptions<span class="op">{</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>    Title<span class="op">:</span>  <span class="st">&quot;My Game&quot;</span><span class="op">,</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>    Author<span class="op">:</span> <span class="st">&quot;haitch&quot;</span><span class="op">,</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>    Year<span class="op">:</span>   <span class="st">&quot;2026&quot;</span><span class="op">,</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>    Hardware<span class="op">:</span> <span class="op">[]</span>tzx<span class="op">.</span>HardwareInfo<span class="op">{</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span>Type<span class="op">:</span> tzx<span class="op">.</span>HWComputers<span class="op">,</span> ID<span class="op">:</span> tzx<span class="op">.</span>HWIDSpectrum128K<span class="op">,</span> Info<span class="op">:</span> tzx<span class="op">.</span>HWInfoUses<span class="op">},</span></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>    <span class="op">},</span></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>    Group<span class="op">:</span> <span class="st">&quot;Main Program&quot;</span><span class="op">,</span></span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span></code></pre></div>
+<h2 id="pkgbasic">pkg/basic</h2>
+<p>Tokenises ZX BASIC source text into the Spectrum's internal byte
+representation, and detokenises it back. Both the 48K and 128K keyword
+sets are supported; the 128K-only keywords <code>SPECTRUM</code> and
+<code>PLAY</code> are recognised.</p>
+<div class="sourceCode" id="cb12"><pre
+class="sourceCode go"><code class="sourceCode go"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> Tokenise<span class="op">(</span>src <span class="dt">string</span><span class="op">,</span> opts <span class="op">...</span>Option<span class="op">)</span> <span class="op">([]</span><span class="dt">byte</span><span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> Detokenise<span class="op">(</span>prog <span class="op">[]</span><span class="dt">byte</span><span class="op">)</span> <span class="op">(</span><span class="dt">string</span><span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> LooksTokenised<span class="op">(</span>data <span class="op">[]</span><span class="dt">byte</span><span class="op">)</span> <span class="dt">bool</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> CaseSensitive<span class="op">()</span> Option</span></code></pre></div>
+<p><code>Tokenise</code> converts source text to tokens. By default,
+keyword matching is case-independent; passing
+<code>CaseSensitive()</code> requires exact keyword case, so that
+lowercase words are kept as literal text rather than tokenised.
+<code>Detokenise</code> reverses the process.
+<code>LooksTokenised</code> reports whether a byte slice appears to be
+tokenised BASIC rather than plain text.</p>
+<h3 id="example-2">Example</h3>
+<div class="sourceCode" id="cb13"><pre
+class="sourceCode go"><code class="sourceCode go"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="st">&quot;github.com/ha1tch/zentools/pkg/basic&quot;</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>tokens<span class="op">,</span> err <span class="op">:=</span> basic<span class="op">.</span>Tokenise<span class="op">(</span><span class="st">&quot;10 PRINT </span><span class="ch">\&quot;</span><span class="st">HELLO</span><span class="ch">\&quot;\n</span><span class="st">&quot;</span><span class="op">)</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>text<span class="op">,</span> err <span class="op">:=</span> basic<span class="op">.</span>Detokenise<span class="op">(</span>tokens<span class="op">)</span></span></code></pre></div>
+<h2 id="pkgscr">pkg/scr</h2>
+<p>Reads and writes ZX Spectrum <code>.scr</code> screen files (the raw
+display: 6912 bytes, pixel bitmap plus per-cell colour attributes,
+exactly as they sit in Spectrum RAM), converts between <code>.scr</code>
+and ordinary images, and manages <code>.cut</code> asset collections
+(named sub-regions cut from one or more screens, for sprite/tile reuse).
+The package's core types are <code>Screen</code>,
+<code>Attribute</code>, <code>Collection</code>, and <code>Asset</code>;
+<code>Encode</code>/<code>Decode</code> convert to and from raw bytes,
+<code>FromImage</code>/<code>ToImage</code> convert to and from
+<code>image.Image</code>, and <code>Fit</code> handles resizing an
+arbitrary source image to the native 256x192 before encoding. This
+manual does not yet cover that surface in full — see the package's own
+doc comments and <a href="CLI.html#zx-scr">the CLI manual's
+<code>zx scr</code> section</a> for a complete tour of what's there.</p>
+<h3 id="ocr">OCR</h3>
+<p>Recognises the text on a screen by matching each 8x8 character cell
+against the real Spectrum ROM font, returning it as plain lines of
+text.</p>
+<div class="sourceCode" id="cb14"><pre
+class="sourceCode go"><code class="sourceCode go"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> RecognizeScreen<span class="op">(</span>s <span class="op">*</span>Screen<span class="op">)</span> <span class="op">([]</span><span class="dt">string</span><span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> RecognizeText<span class="op">(</span>img image<span class="op">.</span>Image<span class="op">,</span> geom Geometry<span class="op">)</span> <span class="op">([]</span><span class="dt">string</span><span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a><span class="kw">type</span> Geometry <span class="kw">struct</span> <span class="op">{</span></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>    OriginX <span class="dt">int</span></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>    OriginY <span class="dt">int</span></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>    Scale   <span class="dt">int</span></span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a><span class="kw">var</span> NativeGeometry <span class="op">=</span> Geometry<span class="op">{</span>OriginX<span class="op">:</span> <span class="dv">0</span><span class="op">,</span> OriginY<span class="op">:</span> <span class="dv">0</span><span class="op">,</span> Scale<span class="op">:</span> <span class="dv">1</span><span class="op">}</span></span></code></pre></div>
+<p><code>RecognizeScreen</code> takes an already-decoded
+<code>Screen</code> directly; since a <code>Screen</code> is always
+exactly the native 256x192 pixels, no geometry is needed.
+<code>RecognizeText</code> is the general form, for any
+<code>image.Image</code> — most often a captured emulator window
+screenshot, where the 256x192 display sits at some offset and scale
+within a larger image. <code>NativeGeometry</code> is the identity case
+(origin 0,0, scale 1), for an image that already <em>is</em> the raw
+256x192 display, pixel for pixel.</p>
+<p>Both return 24 lines of text, one per character row, each
+right-trimmed of trailing spaces. Recognition matches every cell against
+the standard 96-glyph ROM set (codes 32-127); a cell containing
+something outside that set — a box-drawing border, a UDG, decorative
+graphics — is matched to its nearest visual approximation rather than
+skipped, so a caller reading a region that mixes text and graphics
+should expect some garbage characters there rather than blanks.</p>
+<h3 id="example-3">Example</h3>
+<div class="sourceCode" id="cb15"><pre
+class="sourceCode go"><code class="sourceCode go"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="st">&quot;github.com/ha1tch/zentools/pkg/scr&quot;</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="co">// A .scr file: no geometry needed.</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>data<span class="op">,</span> _ <span class="op">:=</span> os<span class="op">.</span>ReadFile<span class="op">(</span><span class="st">&quot;screen.scr&quot;</span><span class="op">)</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>screen<span class="op">,</span> _ <span class="op">:=</span> scr<span class="op">.</span>Decode<span class="op">(</span>data<span class="op">)</span></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>lines<span class="op">,</span> _ <span class="op">:=</span> scr<span class="op">.</span>RecognizeScreen<span class="op">(</span>screen<span class="op">)</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="co">// A captured emulator window: say where the display sits.</span></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>f<span class="op">,</span> _ <span class="op">:=</span> os<span class="op">.</span>Open<span class="op">(</span><span class="st">&quot;screenshot.png&quot;</span><span class="op">)</span></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a>img<span class="op">,</span> _ <span class="op">:=</span> png<span class="op">.</span>Decode<span class="op">(</span>f<span class="op">)</span></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a>geom <span class="op">:=</span> scr<span class="op">.</span>Geometry<span class="op">{</span>OriginX<span class="op">:</span> <span class="dv">256</span><span class="op">,</span> OriginY<span class="op">:</span> <span class="dv">112</span><span class="op">,</span> Scale<span class="op">:</span> <span class="dv">3</span><span class="op">}</span></span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a>lines<span class="op">,</span> _ <span class="op">=</span> scr<span class="op">.</span>RecognizeText<span class="op">(</span>img<span class="op">,</span> geom<span class="op">)</span></span></code></pre></div>
+<h2 id="pkgsnapshot">pkg/snapshot</h2>
+<p>Reads and writes ZX Spectrum snapshots through a neutral
+machine-state type, independent of any emulator. The <code>.sna</code>
+(48K and 128K) and <code>.z80</code> (versioned, compressed) formats are
+supported.</p>
+<h3 id="the-machine-state">The machine state</h3>
+<p>Every encoder and decoder pivots on one type:</p>
+<div class="sourceCode" id="cb16"><pre
+class="sourceCode go"><code class="sourceCode go"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="kw">type</span> MachineState <span class="kw">struct</span> <span class="op">{</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>    Model  Model</span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>    CPU    CPU</span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>    Paging Paging</span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>    IO     IO</span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a>    Memory Memory</span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p><code>Memory</code> holds the eight 16-kilobyte RAM banks;
+<code>CPU</code> holds the registers, interrupt mode, and flags;
+<code>Paging</code> holds the 128K paging ports. The model constants are
+<code>Model48K</code>, <code>Model128K</code>, <code>ModelPlus2</code>,
+<code>ModelPlus2A</code>, and <code>ModelPlus3</code>; the helper
+<code>Is128KFamily</code> reports whether a model is a 128K variant.</p>
+<h3 id="encoding-and-decoding">Encoding and decoding</h3>
+<div class="sourceCode" id="cb17"><pre
+class="sourceCode go"><code class="sourceCode go"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> EncodeSNA<span class="op">(</span>s <span class="op">*</span>MachineState<span class="op">)</span> <span class="op">([]</span><span class="dt">byte</span><span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> DecodeSNA<span class="op">(</span>image <span class="op">[]</span><span class="dt">byte</span><span class="op">)</span> <span class="op">(*</span>MachineState<span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> EncodeSNA128<span class="op">(</span>s <span class="op">*</span>MachineState<span class="op">)</span> <span class="op">([]</span><span class="dt">byte</span><span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> DecodeSNA128<span class="op">(</span>image <span class="op">[]</span><span class="dt">byte</span><span class="op">)</span> <span class="op">(*</span>MachineState<span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> EncodeZ80<span class="op">(</span>s <span class="op">*</span>MachineState<span class="op">)</span> <span class="op">([]</span><span class="dt">byte</span><span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> EncodeZ80v3<span class="op">(</span>s <span class="op">*</span>MachineState<span class="op">)</span> <span class="op">([]</span><span class="dt">byte</span><span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> DecodeZ80<span class="op">(</span>image <span class="op">[]</span><span class="dt">byte</span><span class="op">)</span> <span class="op">(*</span>MachineState<span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span></code></pre></div>
+<p><code>EncodeSNA</code> and <code>EncodeSNA128</code> write 48K and
+128K SNA images respectively; <code>DecodeSNA</code> and
+<code>DecodeSNA128</code> read them. <code>EncodeZ80</code> and
+<code>EncodeZ80v3</code> write Z80 images, and <code>DecodeZ80</code>
+reads any supported Z80 version. Decoding is verified against snapshots
+produced by z88dk and other tools.</p>
+<p>A detail of the 48K SNA format is worth noting: it has no
+program-counter field and stores the program counter on the stack. The
+encoders and decoders handle this symmetrically, so a round trip
+preserves both the program counter and the stack pointer.</p>
+<h3 id="example-4">Example</h3>
+<div class="sourceCode" id="cb18"><pre
+class="sourceCode go"><code class="sourceCode go"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="st">&quot;github.com/ha1tch/zentools/pkg/snapshot&quot;</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>state<span class="op">,</span> err <span class="op">:=</span> snapshot<span class="op">.</span>DecodeZ80<span class="op">(</span>data<span class="op">)</span></span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> err <span class="op">!=</span> <span class="ot">nil</span> <span class="op">{</span></span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> err</span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a>sna<span class="op">,</span> err <span class="op">:=</span> snapshot<span class="op">.</span>EncodeSNA<span class="op">(</span>state<span class="op">)</span></span></code></pre></div>
+<h2 id="pkgbuild">pkg/build</h2>
+<p>Turns machine-code bytes into loadable artifacts. It overlays the
+code onto a real booted machine state — one embedded boot snapshot per
+model — and emits tapes and snapshots that load and run at a given entry
+point. This is the shared procedure behind both <code>zenas build</code>
+and <code>zx snap</code>.</p>
+<h3 id="the-request">The request</h3>
+<div class="sourceCode" id="cb19"><pre
+class="sourceCode go"><code class="sourceCode go"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="kw">type</span> Request <span class="kw">struct</span> <span class="op">{</span></span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>    Name   <span class="dt">string</span> <span class="co">// program name (&lt;= 10 characters on tape)</span></span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>    Code   <span class="op">[]</span><span class="dt">byte</span> <span class="co">// assembled machine code</span></span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a>    Origin <span class="dt">uint16</span> <span class="co">// load address of the first byte of Code</span></span>
+<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a>    Start  <span class="dt">uint16</span> <span class="co">// entry point for snapshot output</span></span>
+<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a>    SP     <span class="dt">uint16</span> <span class="co">// stack pointer for snapshot output</span></span>
+<span id="cb19-7"><a href="#cb19-7" aria-hidden="true" tabindex="-1"></a>    Model  Model  <span class="co">// target model</span></span>
+<span id="cb19-8"><a href="#cb19-8" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>The model is a string type with constants <code>Model48K</code>
+(<code>"48k"</code>), <code>Model128K</code> (<code>"128k"</code>),
+<code>ModelPlus2</code> (<code>"plus2"</code>), <code>ModelPlus2A</code>
+(<code>"plus2a"</code>), and <code>ModelPlus3</code>
+(<code>"plus3"</code>).</p>
+<h3 id="emitters">Emitters</h3>
+<div class="sourceCode" id="cb20"><pre
+class="sourceCode go"><code class="sourceCode go"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> EncodeTAP<span class="op">(</span>r Request<span class="op">)</span> <span class="op">[]</span><span class="dt">byte</span></span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> EncodeTAPWithLoader<span class="op">(</span>r Request<span class="op">)</span> <span class="op">([]</span><span class="dt">byte</span><span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> EncodeTZX<span class="op">(</span>r Request<span class="op">)</span> <span class="op">([]</span><span class="dt">byte</span><span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> EncodeTZXFromTAP<span class="op">(</span>tapImage <span class="op">[]</span><span class="dt">byte</span><span class="op">)</span> <span class="op">([]</span><span class="dt">byte</span><span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> EncodeSNA<span class="op">(</span>r Request<span class="op">)</span> <span class="op">([]</span><span class="dt">byte</span><span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span>
+<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> EncodeZ80<span class="op">(</span>r Request<span class="op">)</span> <span class="op">([]</span><span class="dt">byte</span><span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span></code></pre></div>
+<p><code>EncodeTAP</code> produces a CODE tape;
+<code>EncodeTAPWithLoader</code> prepends a BASIC auto-run loader that
+jumps to <code>Start</code>, giving a tape that runs on its own.
+<code>EncodeTZX</code> and <code>EncodeTZXFromTAP</code> produce TZX
+output. <code>EncodeSNA</code> and <code>EncodeZ80</code> overlay the
+code onto the model's boot state and produce a runnable snapshot with
+the program counter at <code>Start</code> and the stack pointer at
+<code>SP</code>.</p>
+<p><code>Request</code> also offers <code>SPWarning</code>, which
+returns a non-empty message when the stack pointer is positioned where
+it would collide with the loaded code.</p>
+<h3 id="example-5">Example</h3>
+<div class="sourceCode" id="cb21"><pre
+class="sourceCode go"><code class="sourceCode go"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="st">&quot;github.com/ha1tch/zentools/pkg/build&quot;</span></span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>req <span class="op">:=</span> build<span class="op">.</span>Request<span class="op">{</span></span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a>    Name<span class="op">:</span>   <span class="st">&quot;mygame&quot;</span><span class="op">,</span></span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a>    Code<span class="op">:</span>   code<span class="op">,</span></span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a>    Origin<span class="op">:</span> <span class="bn">0x8000</span><span class="op">,</span></span>
+<span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a>    Start<span class="op">:</span>  <span class="bn">0x8000</span><span class="op">,</span></span>
+<span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a>    SP<span class="op">:</span>     <span class="bn">0xFF00</span><span class="op">,</span></span>
+<span id="cb21-9"><a href="#cb21-9" aria-hidden="true" tabindex="-1"></a>    Model<span class="op">:</span>  build<span class="op">.</span>Model48K<span class="op">,</span></span>
+<span id="cb21-10"><a href="#cb21-10" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb21-11"><a href="#cb21-11" aria-hidden="true" tabindex="-1"></a>z80<span class="op">,</span> err <span class="op">:=</span> build<span class="op">.</span>EncodeZ80<span class="op">(</span>req<span class="op">)</span>   <span class="co">// a runnable snapshot</span></span>
+<span id="cb21-12"><a href="#cb21-12" aria-hidden="true" tabindex="-1"></a>tape   <span class="op">:=</span> build<span class="op">.</span>EncodeTAP<span class="op">(</span>req<span class="op">)</span>     <span class="co">// a CODE tape</span></span></code></pre></div>
+<h2 id="pkgversion">pkg/version</h2>
+<p>Exposes the library version as a string constant,
+<code>version.Version</code>, kept in sync with the <code>VERSION</code>
+file at the repository root.</p>
+<h2 id="composing-the-packages">Composing the packages</h2>
+<p>The packages are designed to flow into one another. A common pipeline
+takes assembled code and produces several distribution formats from one
+request:</p>
+<ul>
+<li><code>build.EncodeTAPWithLoader</code> for a tape that auto-runs on
+real hardware;</li>
+<li><code>build.EncodeZ80</code> or <code>build.EncodeSNA</code> for a
+snapshot to test in an emulator;</li>
+<li><code>tzx.EncodeFromTAP</code> over a <code>build.EncodeTAP</code>
+result to add archive metadata.</li>
+</ul>
+<p>For inspection and conversion, <code>tap.Decode</code>,
+<code>tzx.Decode</code>, and the snapshot decoders all return structured
+values you can read, transform, and re-encode. Because every format the
+library writes it can also read, conversions compose cleanly within a
+kind — tape to tape, snapshot to snapshot — while conversions across the
+tape/snapshot divide carry the trade-offs described in the <a
+href="CLI.html">CLI tools manual</a>.</p>
+<div class="zsp-footer">github.com/ha1tch/zentools</div>
+</div>
+</div>
+</body>
+</html>

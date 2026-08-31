@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TAPE HANDLING manual — zentools</title>
+<link rel="stylesheet" href="zsp.css">
+</head>
+<body>
+<div class="zsp-border">
+<div class="zsp-page">
+<div class="zsp-nav">
+<a href="CLI.html">CLI manual</a><a href="TAPE-HANDLING.html">Tape handling</a><a href="SPRITE-HANDLING.html">Sprite handling</a><a href="LIBRARY.html">Library</a><a href="ARCHITECTURE.html">Architecture</a><a href="MIGRATION-STATUS.html">Migration status</a>
+</div>
+<div class="zsp-kicker">zentools manual</div>
+<h1 id="tape-handling-with-zentools">Tape handling with zentools</h1>
+<p>This manual is focused on one thing: building, combining, and editing
+multi-block ZX Spectrum tape files (<code>.tap</code>,
+<code>.tzx</code>, <code>.pzx</code>) with <code>zx</code>. It doesn't
+repeat the full flag reference for every command — that's in the <a
+href="CLI.html">CLI manual</a> — but instead walks through the
+<em>workflows</em>: which tool to reach for, why, and how the pieces fit
+together.</p>
+<p>If you're looking for snapshot handling, RZX recordings, or
+screen/image conversion, see the <a href="CLI.html">CLI manual</a>
+instead. This document is tapes only.</p>
+<h2 id="contents">Contents</h2>
+<ul>
+<li><a href="#the-tools-and-when-to-reach-for-each">The tools, and when
+to reach for each</a></li>
+<li><a href="#tutorial-assembling-starquest">Tutorial: assembling
+STARQUEST</a>
+<ul>
+<li><a href="#the-parts">The parts</a></li>
+<li><a href="#step-1--bootstrapping-the-core-with-zx-build">Step 1 —
+bootstrapping the core with <code>zx build</code></a></li>
+<li><a
+href="#step-2--adding-pieces-as-theyre-ready-with-zx-edit-import">Step 2
+— adding pieces as they're ready with
+<code>zx edit import</code></a></li>
+<li><a href="#step-3--finding-and-fixing-a-bad-block">Step 3 — finding
+and fixing a bad block</a></li>
+<li><a href="#step-4--the-same-tape-reproducibly-from-one-spec">Step 4 —
+the same tape, reproducibly, from one spec</a></li>
+<li><a href="#step-5--wrapping-for-distribution">Step 5 — wrapping for
+distribution</a></li>
+</ul></li>
+<li><a href="#reference-notes">Reference notes</a>
+<ul>
+<li><a href="#the-logical-block-list-and-its-limits">The logical block
+list, and its limits</a></li>
+<li><a href="#zx-edit-vs-zx-build-which-one-when"><code>zx edit</code>
+vs <code>zx build</code>: which one, when</a></li>
+<li><a
+href="#combining-files-three-different-tools-three-different-jobs">Combining
+files: three different tools, three different jobs</a></li>
+</ul></li>
+</ul>
+<h2 id="the-tools-and-when-to-reach-for-each">The tools, and when to
+reach for each</h2>
+<p>Six commands touch tape files, and each has a distinct job:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Command</th>
+<th>Job</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>zx tap make</code></td>
+<td>Wrap one binary as one CODE block. The simplest case.</td>
+</tr>
+<tr class="even">
+<td><code>zx tap append</code></td>
+<td>Concatenate whole TAP files. Simple, TAP-only, byte-level.</td>
+</tr>
+<tr class="odd">
+<td><code>zx tzx make</code> / <code>zx pzx make</code></td>
+<td>Wrap a TAP as TZX/PZX, with archive metadata.</td>
+</tr>
+<tr class="even">
+<td><code>zx build</code></td>
+<td>Describe an entire multi-block tape at once, from a JSON spec.</td>
+</tr>
+<tr class="odd">
+<td><code>zx edit</code></td>
+<td>Change one thing about an <em>existing</em> multi-block tape: list,
+extract, delete, import, or append.</td>
+</tr>
+<tr class="even">
+<td><code>zx convert</code></td>
+<td>Move between formats, or pull one block out as a flat binary.</td>
+</tr>
+</tbody>
+</table>
+<p>The tutorial below uses all six in a realistic order:
+<code>zx basic</code> and <code>zx scr</code> to prepare raw pieces,
+<code>zx build</code> to lay down the initial structure,
+<code>zx edit import</code> to add pieces incrementally as they become
+ready, <code>zx edit delete</code>/<code>import</code> to fix a mistake,
+and <code>zx tzx make</code> to package the result for release.</p>
+<h2 id="tutorial-assembling-starquest">Tutorial: assembling
+STARQUEST</h2>
+<p>STARQUEST is a hypothetical Spectrum game: a BASIC loader, a title
+screen, a game engine, and three levels — five genuinely different kinds
+of content, assembled from five separately-produced files into one tape.
+Every command below was run for real to write this tutorial; the output
+shown is exactly what it produced.</p>
+<h3 id="the-parts">The parts</h3>
+<p>A BASIC loader that sets the screen colours, prints a loading
+message, then loads and runs the machine code that follows:</p>
+<pre class="basic"><code>10 BORDER 1: PAPER 1: INK 7: CLS
+20 PRINT &quot;Loading STARQUEST...&quot;
+30 LOAD &quot;&quot; CODE
+40 RANDOMIZE USR 32768</code></pre>
+<p>Tokenise it into the Spectrum's internal byte format — this is raw
+tokenised bytes, not yet a tape block of any kind:</p>
+<pre><code>$ zx basic tokenise loader.bas -o loader_tok.bin</code></pre>
+<p>A title screen, encoded from an ordinary image to the native
+<code>.scr</code> format (6912 bytes: the pixel bitmap plus colour
+attributes, exactly as they'd sit in Spectrum RAM at
+<code>0x4000</code>):</p>
+<pre><code>$ zx scr encode title.png -o title.scr
+wrote title.scr (6912 bytes)</code></pre>
+<p>And three more pieces that a real project would produce from an
+assembler and a level editor — <code>engine.bin</code>,
+<code>level1.bin</code>, <code>level2.bin</code>, and
+<code>level3.bin</code>. For this tutorial they're just distinguishable
+placeholder bytes; the tape-assembly steps that follow don't care what's
+actually inside a CODE block, only its name, length, and load
+address.</p>
+<p>Five pieces, three different "kinds" as far as a tape block is
+concerned: one BASIC program, one screen (which a tape sees as an
+ordinary CODE block — it's just 6912 bytes with nowhere special to sit
+except <code>0x4000</code>), and three machine-code blocks.</p>
+<h3 id="step-1--bootstrapping-the-core-with-zx-build">Step 1 —
+bootstrapping the core with <code>zx build</code></h3>
+<p>The loader and title screen are the tape's fixed skeleton — every
+build of this game starts with the same two blocks, in the same order.
+That's exactly what <code>zx build</code>'s declarative spec is for:
+describe the known structure once, in a file that can be re-run
+identically at any time.</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;title&quot;</span><span class="fu">:</span> <span class="st">&quot;STARQUEST&quot;</span><span class="fu">,</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;blocks&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">&quot;kind&quot;</span><span class="fu">:</span> <span class="st">&quot;program&quot;</span><span class="fu">,</span> <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;LOADER&quot;</span><span class="fu">,</span> <span class="dt">&quot;autostart&quot;</span><span class="fu">:</span> <span class="dv">10</span><span class="fu">,</span> <span class="dt">&quot;file&quot;</span><span class="fu">:</span> <span class="st">&quot;loader_tok.bin&quot;</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">&quot;kind&quot;</span><span class="fu">:</span> <span class="st">&quot;code&quot;</span><span class="fu">,</span> <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;TITLE&quot;</span><span class="fu">,</span> <span class="dt">&quot;org&quot;</span><span class="fu">:</span> <span class="dv">16384</span><span class="fu">,</span> <span class="dt">&quot;file&quot;</span><span class="fu">:</span> <span class="st">&quot;title.scr&quot;</span><span class="fu">}</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>(<code>16384</code> is <code>0x4000</code> — the spec format uses
+plain decimal, not the <code>0x...</code> hex strings the CLI flags
+accept elsewhere; see <a
+href="#zx-edit-vs-zx-build-which-one-when">Reference notes</a>.)</p>
+<pre><code>$ zx build core.json -o starquest.tap
+Wrote starquest.tap (7065 bytes)
+$ zx edit list starquest.tap
+starquest.tap: 4 block(s)
+  [0] header  type=Program name=&quot;LOADER&quot; autostart=0x000A
+  [1] data    103 bytes  checksum_ok=true
+  [2] header  type=Code name=&quot;TITLE&quot; load=0x4000
+  [3] data    6912 bytes  checksum_ok=true</code></pre>
+<h3 id="step-2--adding-pieces-as-theyre-ready-with-zx-edit-import">Step
+2 — adding pieces as they're ready with <code>zx edit import</code></h3>
+<p>Unlike the loader and title screen, the engine and levels don't all
+exist at once in a real project — they land over time, as each is
+finished. <code>zx edit import</code> is the incremental tool for
+exactly that: add one block to an <em>existing</em> tape, appended at
+the end unless <code>--at</code> says otherwise.</p>
+<p>The engine arrives first:</p>
+<pre><code>$ zx edit import starquest.tap --data engine.bin --name ENGINE --org 0x8000 -o starquest.tap
+Wrote starquest.tap (7158 bytes)</code></pre>
+<p><code>-o</code> names the same file as the input — reading happens
+before writing, so this is safe, and it's the natural way to build a
+tape up over several sessions rather than always producing a new
+filename. Then the three levels, one by one as each is finished:</p>
+<pre><code>$ zx edit import starquest.tap --data level1.bin --name LEVEL1 --org 0xC000 -o starquest.tap
+$ zx edit import starquest.tap --data level2.bin --name LEVEL2 --org 0xC000 -o starquest.tap
+$ zx edit import starquest.tap --data level3.bin --name LEVEL3 --org 0xC000 -o starquest.tap
+$ zx edit list starquest.tap
+starquest.tap: 12 block(s)
+  [0] header  type=Program name=&quot;LOADER&quot; autostart=0x000A
+  [1] data    103 bytes  checksum_ok=true
+  [2] header  type=Code name=&quot;TITLE&quot; load=0x4000
+  [3] data    6912 bytes  checksum_ok=true
+  [4] header  type=Code name=&quot;ENGINE&quot; load=0x8000
+  [5] data    68 bytes  checksum_ok=true
+  [6] header  type=Code name=&quot;LEVEL1&quot; load=0xC000
+  [7] data    128 bytes  checksum_ok=true
+  [8] header  type=Code name=&quot;LEVEL2&quot; load=0xC000
+  [9] data    128 bytes  checksum_ok=true
+  [10] header  type=Code name=&quot;LEVEL3&quot; load=0xC000
+  [11] data    128 bytes  checksum_ok=true</code></pre>
+<p>All three levels load at the same address, <code>0xC000</code> — a
+real game typically loads one level at a time into a shared buffer,
+which is exactly why they can share a load address on tape without
+conflict: only one is ever resident in memory at once.</p>
+<h3 id="step-3--finding-and-fixing-a-bad-block">Step 3 — finding and
+fixing a bad block</h3>
+<p>LEVEL2 turns out to have a bug. <code>zx edit list --json</code>
+gives a scriptable way to find exactly which index it's at:</p>
+<pre><code>$ zx edit list starquest.tap --json | python3 -c &quot;
+import json, sys
+m = json.load(sys.stdin)
+for b in m[&#39;blocks&#39;]:
+    if b.get(&#39;name&#39;) == &#39;LEVEL2&#39;:
+        print(&#39;LEVEL2 header at index&#39;, b[&#39;index&#39;])
+&quot;
+LEVEL2 header at index 8</code></pre>
+<p>Its header is at index 8, so its data is at index 9 —
+<code>zx edit delete</code> takes a comma-separated list against the
+tape's <em>original</em> numbering, so both indices are named together
+in one call, not two sequential ones where the second would have
+shifted:</p>
+<pre><code>$ zx edit delete starquest.tap --block 8,9 -o starquest.tap
+Wrote starquest.tap (7464 bytes)
+$ zx edit list starquest.tap
+starquest.tap: 10 block(s)
+  [0] header  type=Program name=&quot;LOADER&quot; autostart=0x000A
+  [1] data    103 bytes  checksum_ok=true
+  [2] header  type=Code name=&quot;TITLE&quot; load=0x4000
+  [3] data    6912 bytes  checksum_ok=true
+  [4] header  type=Code name=&quot;ENGINE&quot; load=0x8000
+  [5] data    68 bytes  checksum_ok=true
+  [6] header  type=Code name=&quot;LEVEL1&quot; load=0xC000
+  [7] data    128 bytes  checksum_ok=true
+  [8] header  type=Code name=&quot;LEVEL3&quot; load=0xC000
+  [9] data    128 bytes  checksum_ok=true</code></pre>
+<p>Then the fixed version goes back in at the same position,
+<code>--at 8</code>, putting it back between LEVEL1 and LEVEL3 rather
+than tacked onto the end:</p>
+<pre><code>$ zx edit import starquest.tap --data level2_fixed.bin --name LEVEL2 --org 0xC000 --at 8 -o starquest.tap
+Wrote starquest.tap (7617 bytes)
+$ zx edit list starquest.tap
+starquest.tap: 12 block(s)
+  [0] header  type=Program name=&quot;LOADER&quot; autostart=0x000A
+  [1] data    103 bytes  checksum_ok=true
+  [2] header  type=Code name=&quot;TITLE&quot; load=0x4000
+  [3] data    6912 bytes  checksum_ok=true
+  [4] header  type=Code name=&quot;ENGINE&quot; load=0x8000
+  [5] data    68 bytes  checksum_ok=true
+  [6] header  type=Code name=&quot;LEVEL1&quot; load=0xC000
+  [7] data    128 bytes  checksum_ok=true
+  [8] header  type=Code name=&quot;LEVEL2&quot; load=0xC000
+  [9] data    128 bytes  checksum_ok=true
+  [10] header  type=Code name=&quot;LEVEL3&quot; load=0xC000
+  [11] data    128 bytes  checksum_ok=true</code></pre>
+<p>Extracting block 9 confirms it's genuinely the fixed content, not the
+old one under a new name:</p>
+<pre><code>$ zx edit extract starquest.tap --block 9 -o check.bin
+$ head -c 20 check.bin
+LEVEL-TWO-FIXED-LEVE</code></pre>
+<h3 id="step-4--the-same-tape-reproducibly-from-one-spec">Step 4 — the
+same tape, reproducibly, from one spec</h3>
+<p>Once the final composition is known, it can be written down as a
+single <code>zx build</code> spec — six blocks this time, the two fixed
+ones from Step 1 plus the four added incrementally since:</p>
+<div class="sourceCode" id="cb12"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;title&quot;</span><span class="fu">:</span> <span class="st">&quot;STARQUEST&quot;</span><span class="fu">,</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;blocks&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">&quot;kind&quot;</span><span class="fu">:</span> <span class="st">&quot;program&quot;</span><span class="fu">,</span> <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;LOADER&quot;</span><span class="fu">,</span> <span class="dt">&quot;autostart&quot;</span><span class="fu">:</span> <span class="dv">10</span><span class="fu">,</span> <span class="dt">&quot;file&quot;</span><span class="fu">:</span> <span class="st">&quot;loader_tok.bin&quot;</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">&quot;kind&quot;</span><span class="fu">:</span> <span class="st">&quot;code&quot;</span><span class="fu">,</span> <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;TITLE&quot;</span><span class="fu">,</span> <span class="dt">&quot;org&quot;</span><span class="fu">:</span> <span class="dv">16384</span><span class="fu">,</span> <span class="dt">&quot;file&quot;</span><span class="fu">:</span> <span class="st">&quot;title.scr&quot;</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">&quot;kind&quot;</span><span class="fu">:</span> <span class="st">&quot;code&quot;</span><span class="fu">,</span> <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;ENGINE&quot;</span><span class="fu">,</span> <span class="dt">&quot;org&quot;</span><span class="fu">:</span> <span class="dv">32768</span><span class="fu">,</span> <span class="dt">&quot;file&quot;</span><span class="fu">:</span> <span class="st">&quot;engine.bin&quot;</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">&quot;kind&quot;</span><span class="fu">:</span> <span class="st">&quot;code&quot;</span><span class="fu">,</span> <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;LEVEL1&quot;</span><span class="fu">,</span> <span class="dt">&quot;org&quot;</span><span class="fu">:</span> <span class="dv">49152</span><span class="fu">,</span> <span class="dt">&quot;file&quot;</span><span class="fu">:</span> <span class="st">&quot;level1.bin&quot;</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">&quot;kind&quot;</span><span class="fu">:</span> <span class="st">&quot;code&quot;</span><span class="fu">,</span> <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;LEVEL2&quot;</span><span class="fu">,</span> <span class="dt">&quot;org&quot;</span><span class="fu">:</span> <span class="dv">49152</span><span class="fu">,</span> <span class="dt">&quot;file&quot;</span><span class="fu">:</span> <span class="st">&quot;level2_fixed.bin&quot;</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">&quot;kind&quot;</span><span class="fu">:</span> <span class="st">&quot;code&quot;</span><span class="fu">,</span> <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;LEVEL3&quot;</span><span class="fu">,</span> <span class="dt">&quot;org&quot;</span><span class="fu">:</span> <span class="dv">49152</span><span class="fu">,</span> <span class="dt">&quot;file&quot;</span><span class="fu">:</span> <span class="st">&quot;level3.bin&quot;</span><span class="fu">}</span></span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<pre><code>$ zx build full.json -o starquest_rebuilt.tap
+Wrote starquest_rebuilt.tap (7617 bytes)
+$ cmp starquest.tap starquest_rebuilt.tap &amp;&amp; echo &quot;IDENTICAL&quot;
+IDENTICAL</code></pre>
+<p>Byte-for-byte identical to the tape assembled incrementally across
+Steps 1-3. Neither approach is "more correct" than the other — they're
+the same underlying block list, described two different ways. Building
+up with <code>zx edit</code> suits a project where pieces arrive over
+time and you want to see the tape grow; writing a <code>zx build</code>
+spec suits a release process where you want one reproducible command
+that always produces the exact same result from the exact same
+inputs.</p>
+<h3 id="step-5--wrapping-for-distribution">Step 5 — wrapping for
+distribution</h3>
+<p>The final step: wrap the finished TAP as a TZX with proper archive
+metadata for release.</p>
+<pre><code>$ zx tzx make starquest.tap --title &quot;STARQUEST&quot; --author &quot;haitch&quot; --year 2026 -o starquest.tzx
+Wrote starquest.tzx (7692 bytes)
+$ zx tzx info starquest.tzx
+starquest.tzx: 13 blocks
+  [0] 0x32
+  [1] 0x10
+  [2] 0x10
+  [3] 0x10
+  [4] 0x10
+  [5] 0x10
+  [6] 0x10
+  [7] 0x10
+  [8] 0x10
+  [9] 0x10
+  [10] 0x10
+  [11] 0x10
+  [12] 0x10</code></pre>
+<p>Thirteen blocks, not twelve — block <code>0x32</code> at the start is
+the archive-info metadata block
+<code>--title</code>/<code>--author</code>/<code>--year</code> added;
+the other twelve are the same content blocks as before. Converting back
+to TAP confirms exactly this: the metadata block, having no TAP
+equivalent, is dropped with an explicit note, while every content block
+survives untouched.</p>
+<pre><code>$ zx convert starquest.tzx -o roundtrip.tap
+Note: dropped 1 block(s) with no TAP-representable data (pilot tones, pulse
+sequences, direct recordings, or structural/metadata blocks)
+$ cmp starquest.tap roundtrip.tap &amp;&amp; echo &quot;IDENTICAL&quot;
+IDENTICAL</code></pre>
+<p>STARQUEST is done: one BASIC loader, a title screen, an engine, three
+levels (one of them replaced mid-project), assembled two different ways
+that agree exactly, and packaged for release — with every step verified
+against the real content at every stage, not just "the command didn't
+error."</p>
+<h2 id="reference-notes">Reference notes</h2>
+<h3 id="the-logical-block-list-and-its-limits">The logical block list,
+and its limits</h3>
+<p><code>zx edit</code> and <code>zx build</code> both work at the level
+of a tape's flat <em>logical</em> block list — the loadable header/data
+blocks themselves, the same list <code>zx convert</code>'s own tape
+normalisation already works with. A TZX's own structural blocks (pauses,
+group markers, <code>STOP</code>, archive metadata — like the one in
+Step 5 above) and a PZX's own
+<code>PAUS</code>/<code>BRWS</code>/<code>STOP</code> blocks aren't part
+of that list and don't survive a
+<code>delete</code>/<code>import</code>/<code>append</code>/<code>build</code>
+round trip. This isn't a bug to work around; it's the same scope
+<code>zx convert</code> already has going from TZX down to TAP, and it's
+why Step 5's round trip dropped exactly one block and named it
+explicitly rather than silently losing it.</p>
+<h3 id="zx-edit-vs-zx-build-which-one-when"><code>zx edit</code> vs
+<code>zx build</code>: which one, when</h3>
+<table>
+<thead>
+<tr class="header">
+<th></th>
+<th><code>zx edit</code></th>
+<th><code>zx build</code></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Shape</td>
+<td>One change at a time</td>
+<td>The whole tape, described at once</td>
+</tr>
+<tr class="even">
+<td>Input</td>
+<td>An existing tape file</td>
+<td>A JSON spec + separate data files</td>
+</tr>
+<tr class="odd">
+<td>Best for</td>
+<td>Growing a tape incrementally, fixing one block, inspecting an
+existing file</td>
+<td>A known, reproducible final composition</td>
+</tr>
+<tr class="even">
+<td>Can start from nothing?</td>
+<td>No — always edits an existing file</td>
+<td>Yes — this is how Step 1 above began</td>
+</tr>
+</tbody>
+</table>
+<p>If you don't yet have a tape to edit, <code>zx build</code> is where
+you start (Step 1). If you have one and want to change one thing,
+<code>zx edit</code> is usually less to write than updating and
+re-running a whole spec (Steps 2-3). Nothing stops using both across a
+project's lifetime, as this tutorial did.</p>
+<h3
+id="combining-files-three-different-tools-three-different-jobs">Combining
+files: three different tools, three different jobs</h3>
+<p>Three commands can produce one tape from several inputs, and they're
+not interchangeable:</p>
+<ul>
+<li><strong><code>zx tap append</code></strong> — TAP files only, both
+in and out. Genuinely raw byte concatenation, since TAP has no container
+structure of its own to corrupt; the fastest and simplest option when
+every input already is TAP.</li>
+<li><strong><code>zx edit append</code></strong> — any mix of
+TAP/TZX/PZX inputs, any one of the three as output. Decodes each input's
+own logical block list and re-encodes them together, so it works where
+raw concatenation wouldn't (TZX and PZX both have container structure a
+byte-level <code>cat</code> would break).</li>
+<li><strong><code>zx build</code></strong> — not combining <em>existing
+tape files</em> at all, but assembling fresh blocks from raw data files
+(binaries, tokenised BASIC, <code>.scr</code> screens) named in a spec.
+This is what Steps 1 and 4 used, since the individual pieces were never
+their own standalone tapes to begin with.</li>
+</ul>
+<div class="zsp-footer">github.com/ha1tch/zentools</div>
+</div>
+</div>
+</body>
+</html>

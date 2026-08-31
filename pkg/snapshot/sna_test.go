@@ -46,7 +46,7 @@ func TestSNARoundTrip(t *testing.T) {
 		t.Errorf("SP = 0x%04X, want 0x%04X", out.CPU.SP, in.CPU.SP)
 	}
 	for _, c := range []struct {
-		name     string
+		name      string
 		got, want uint16
 	}{
 		{"AF", out.CPU.AF, in.CPU.AF}, {"BC", out.CPU.BC, in.CPU.BC},
@@ -110,10 +110,16 @@ func TestSNA128RoundTrip(t *testing.T) {
 		}
 	}
 	img, err := EncodeSNA128(s)
-	if err != nil { t.Fatalf("EncodeSNA128: %v", err) }
-	if len(img) != sna128Len { t.Fatalf("size %d want %d", len(img), sna128Len) }
+	if err != nil {
+		t.Fatalf("EncodeSNA128: %v", err)
+	}
+	if len(img) != sna128Len {
+		t.Fatalf("size %d want %d", len(img), sna128Len)
+	}
 	out, err := DecodeSNA128(img)
-	if err != nil { t.Fatalf("DecodeSNA128: %v", err) }
+	if err != nil {
+		t.Fatalf("DecodeSNA128: %v", err)
+	}
 	if out.CPU.PC != s.CPU.PC || out.CPU.SP != s.CPU.SP || out.CPU.AF != s.CPU.AF {
 		t.Errorf("regs: PC=0x%04X SP=0x%04X AF=0x%04X", out.CPU.PC, out.CPU.SP, out.CPU.AF)
 	}
@@ -124,6 +130,35 @@ func TestSNA128RoundTrip(t *testing.T) {
 		if out.Memory.RAM[b] != s.Memory.RAM[b] {
 			t.Errorf("bank %d not preserved", b)
 		}
+	}
+}
+
+// TestSNA128EncodeRejectsAliasedBank confirms EncodeSNA128 refuses a
+// Port7FFD state that pages bank 2 or bank 5 into 0xC000 -- a real,
+// valid hardware state (nothing prevents it), but one the fixed
+// 131103-byte .sna128 layout has no documented way to represent
+// losslessly. Before this fix, EncodeSNA128 silently produced a
+// 147487-byte image instead (one 16K bank oversized, from writing the
+// aliased bank's content twice), which DecodeSNA128's own strict
+// length check would then reject as "wrong size" -- a confusing
+// failure two steps removed from its actual cause.
+func TestSNA128EncodeRejectsAliasedBank(t *testing.T) {
+	for _, bank := range []uint8{2, 5} {
+		s := &MachineState{Model: Model128K}
+		s.Paging.Port7FFD = bank
+		if _, err := EncodeSNA128(s); err == nil {
+			t.Errorf("Port7FFD selecting bank %d (aliasing an always-fixed bank): expected an error, got nil", bank)
+		}
+	}
+	// A non-aliased bank must still work exactly as before.
+	s := &MachineState{Model: Model128K}
+	s.Paging.Port7FFD = 3
+	img, err := EncodeSNA128(s)
+	if err != nil {
+		t.Fatalf("EncodeSNA128 with non-aliased bank 3: %v", err)
+	}
+	if len(img) != sna128Len {
+		t.Errorf("size %d, want %d", len(img), sna128Len)
 	}
 }
 

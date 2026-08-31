@@ -1,0 +1,191 @@
+/* ZSP (ZX Spectrum) documentation style for zentools */
+
+:root {
+  /* the real Spectrum 8-colour palette: dim (0xD7) and bright (0xFF) */
+  --z-black: #000000;
+  --z-blue: #0000D7;      --z-blue-b: #0000FF;
+  --z-red: #D70000;       --z-red-b: #FF0000;
+  --z-magenta: #D700D7;   --z-magenta-b: #FF00FF;
+  --z-green: #00D700;     --z-green-b: #00FF00;
+  --z-cyan: #00D7D7;      --z-cyan-b: #00FFFF;
+  --z-yellow: #D7D700;    --z-yellow-b: #FFFF00;
+  --z-white: #D7D7D7;     --z-white-b: #FFFFFF;
+}
+
+* { box-sizing: border-box; }
+
+html {
+  background: var(--z-black);
+}
+
+body {
+  background: var(--z-black);
+  color: var(--z-white-b);
+  font-family: "Consolas", "SFMono-Regular", Menlo, Monaco, "Courier New", monospace;
+  font-size: 16px;
+  line-height: 1.6;
+  margin: 0;
+  padding: 0;
+}
+
+/* the physical screen border, the way a real Spectrum frames its own display */
+.zsp-border {
+  border: 24px solid var(--z-blue);
+  border-top: 32px solid var(--z-blue);
+  min-height: 100vh;
+}
+
+.zsp-page {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 32px 40px 80px;
+}
+
+/* headings: bright, high-contrast, the loading-screen palette */
+h1, h2, h3, h4 {
+  font-family: "Consolas", "SFMono-Regular", Menlo, monospace;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+}
+
+h1 {
+  color: var(--z-yellow-b);
+  background: var(--z-black);
+  border-bottom: 4px solid var(--z-yellow-b);
+  padding-bottom: 12px;
+  margin: 0 0 28px;
+  font-size: 1.9em;
+}
+
+h2 {
+  color: var(--z-cyan-b);
+  border-bottom: 2px solid var(--z-cyan);
+  padding-bottom: 6px;
+  margin: 2.2em 0 0.8em;
+  font-size: 1.4em;
+}
+
+h3 {
+  color: var(--z-green-b);
+  margin: 1.8em 0 0.6em;
+  font-size: 1.15em;
+}
+
+h4 {
+  color: var(--z-magenta-b);
+  margin: 1.5em 0 0.5em;
+  font-size: 1em;
+}
+
+a { color: var(--z-cyan-b); text-decoration: underline; text-decoration-color: var(--z-cyan); }
+a:visited { color: var(--z-magenta-b); }
+a:hover { color: var(--z-yellow-b); text-decoration-color: var(--z-yellow-b); }
+
+p, li { color: var(--z-white-b); }
+
+strong { color: var(--z-yellow-b); font-weight: 700; }
+em { color: var(--z-green-b); font-style: normal; }
+
+code {
+  background: #101010;
+  color: var(--z-green-b);
+  padding: 0.1em 0.35em;
+  border-radius: 2px;
+  font-size: 0.92em;
+  border: 1px solid #2a2a2a;
+}
+
+pre {
+  background: #0a0a0a;
+  border: 2px solid var(--z-blue);
+  border-left: 6px solid var(--z-cyan);
+  padding: 14px 18px;
+  overflow-x: auto;
+  margin: 1.2em 0;
+}
+pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--z-white-b);
+  font-size: 0.9em;
+}
+
+blockquote {
+  border-left: 4px solid var(--z-magenta);
+  margin: 1.2em 0;
+  padding: 0.4em 1em;
+  color: var(--z-white);
+  background: #0d0d0d;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1.4em 0;
+  font-size: 0.92em;
+}
+th, td {
+  border: 1px solid var(--z-blue);
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+th {
+  background: #0a0a2a;
+  color: var(--z-yellow-b);
+}
+tr:nth-child(even) td {
+  background: #0a0a0a;
+}
+
+img {
+  max-width: 100%;
+  image-rendering: pixelated;
+  border: 3px solid var(--z-white);
+  margin: 1em 0;
+  display: block;
+}
+
+hr {
+  border: none;
+  border-top: 2px dashed var(--z-blue);
+  margin: 2.4em 0;
+}
+
+.zsp-figure { margin: 1.4em 0; }
+.zsp-figure img { margin-bottom: 0.4em; }
+.zsp-figure em { display: block; color: var(--z-white); font-size: 0.9em; }
+
+/* the little "manual" kicker line above the H1 */
+.zsp-kicker {
+  color: var(--z-cyan);
+  font-size: 0.85em;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.zsp-nav {
+  margin: 0 0 32px;
+  padding: 12px 16px;
+  background: #0a0a0a;
+  border: 1px solid var(--z-blue);
+  font-size: 0.9em;
+}
+.zsp-nav a { margin-right: 18px; }
+
+.zsp-footer {
+  margin-top: 4em;
+  padding-top: 1.2em;
+  border-top: 2px dashed var(--z-blue);
+  color: var(--z-cyan);
+  font-size: 0.82em;
+}
+
+ul, ol { padding-left: 1.6em; }
+li { margin: 0.3em 0; }
+
+/* code-span inside headings/links shouldn't double-box */
+h1 code, h2 code, h3 code, a code { background: none; border: none; color: inherit; padding: 0; }

@@ -26,7 +26,8 @@ func cmdTAP(args []string) error {
 
 Usage:
   zx tap make <input.bin> [--name N] [--origin <addr>] [--loader --start <addr>] -o out.tap
-  zx tap info <file.tap>`)
+  zx tap info <file.tap>
+  zx tap append <file1.tap> <file2.tap> [<file3.tap>...] -o out.tap`)
 		return nil
 	}
 	switch args[0] {
@@ -34,6 +35,8 @@ Usage:
 		return tapMake(args[1:])
 	case "info":
 		return tapInfo(args[1:])
+	case "append":
+		return tapAppend(args[1:])
 	default:
 		return fmt.Errorf("unknown tap subcommand %q", args[0])
 	}
@@ -42,11 +45,11 @@ Usage:
 func tapMake(args []string) error {
 	fs := flag.NewFlagSet("tap make", flag.ContinueOnError)
 	var (
-		name     = fs.String("name", "", "tape block name (<=10 chars)")
-		originS  = fs.String("origin", "0x8000", "load address")
-		loader   = fs.Bool("loader", false, "prepend a BASIC auto-run loader")
-		startS   = fs.String("start", "", "entry point (required with --loader)")
-		out      = fs.String("o", "", "output file (required)")
+		name    = fs.String("name", "", "tape block name (<=10 chars)")
+		originS = fs.String("origin", "0x8000", "load address")
+		loader  = fs.Bool("loader", false, "prepend a BASIC auto-run loader")
+		startS  = fs.String("start", "", "entry point (required with --loader)")
+		out     = fs.String("o", "", "output file (required)")
 	)
 	if err := fs.Parse(permuteArgs(args, map[string]bool{"loader": true})); err != nil {
 		return err
@@ -116,6 +119,41 @@ func tapInfo(args []string) error {
 		fmt.Println()
 	}
 	return nil
+}
+
+// tapAppend concatenates two or more TAP files into one. Genuinely
+// simple, deliberately not routed through zx edit append's more general
+// []tap.Block decode/re-encode machinery: TAP is nothing but a bare
+// sequence of length-prefixed blocks with no container structure of its
+// own, so concatenating well-formed TAP files at the raw byte level
+// already produces a well-formed multi-block TAP file -- no decoding or
+// re-encoding needed at all for this specific, common case. Each input
+// is still validated as real TAP (tap.Decode must succeed on it) before
+// being concatenated, so a mistaken non-TAP input is caught with a clear
+// error rather than silently producing a corrupt result.
+func tapAppend(args []string) error {
+	fs := flag.NewFlagSet("tap append", flag.ContinueOnError)
+	out := fs.String("o", "", "output file (required)")
+	if err := fs.Parse(permuteArgs(args, nil)); err != nil {
+		return err
+	}
+	if fs.NArg() < 2 || *out == "" {
+		return fmt.Errorf("usage: zx tap append <file1.tap> <file2.tap> [<file3.tap>...] -o out.tap")
+	}
+
+	var combined []byte
+	for i := 0; i < fs.NArg(); i++ {
+		path := fs.Arg(i)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if _, err := tap.Decode(data); err != nil {
+			return fmt.Errorf("%s: not a well-formed TAP file: %w", path, err)
+		}
+		combined = append(combined, data...)
+	}
+	return writeOut(*out, combined)
 }
 
 // --- zx tzx -----------------------------------------------------------------
@@ -277,6 +315,10 @@ func cmdInfo(args []string) error {
 		return tapInfo(args)
 	case "snap":
 		return snapInfo(args)
+	case "pzx":
+		return pzxInfo(args)
+	case "rzx":
+		return rzxInfo(args)
 	default:
 		return fmt.Errorf("could not identify the format of %s", path)
 	}
@@ -287,13 +329,26 @@ func detectFormat(path string, data []byte) string {
 	if len(data) >= 7 && string(data[:7]) == "ZXTape!" {
 		return "tzx"
 	}
+	if len(data) >= 4 && string(data[:4]) == "ZXST" {
+		return "snap"
+	}
+	if len(data) >= 4 && string(data[:4]) == "PZXT" {
+		return "pzx"
+	}
+	if len(data) >= 4 && string(data[:4]) == "RZX!" {
+		return "rzx"
+	}
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".tzx":
 		return "tzx"
 	case ".tap":
 		return "tap"
-	case ".sna", ".z80":
+	case ".sna", ".z80", ".szx":
 		return "snap"
+	case ".pzx":
+		return "pzx"
+	case ".rzx":
+		return "rzx"
 	}
 	return ""
 }

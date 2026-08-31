@@ -1,5 +1,5 @@
 // Package build turns assembled Z80 machine code into loadable ZX Spectrum
-// artifacts: tape images (.tap, .tzx) and snapshots (.sna, .z80).
+// artifacts: tape images (.tap, .tzx) and snapshots (.sna, .z80, .szx).
 //
 // Tape output is a direct encoding of the code as a CODE block. Snapshot output
 // overlays the code onto a real booted-machine state (captured per model) so
@@ -12,6 +12,7 @@ import (
 	"fmt"
 
 	"github.com/ha1tch/zentools/pkg/snapshot"
+	"github.com/ha1tch/zentools/pkg/szx"
 	"github.com/ha1tch/zentools/pkg/tap"
 	"github.com/ha1tch/zentools/pkg/tzx"
 )
@@ -35,12 +36,12 @@ const DefaultSP uint16 = 0xFF00
 // Request describes one build: the assembled bytes, where they load, and the
 // entry/stack configuration for snapshot output.
 type Request struct {
-	Name    string // program name embedded in tape/snapshot (<= 10 chars on tape)
-	Code    []byte // assembled machine code
-	Origin  uint16 // load address of the first byte of Code
-	Start   uint16 // PC entry point for snapshot output (required for snapshots)
-	SP      uint16 // stack pointer for snapshot output
-	Model   Model  // target model for snapshot output
+	Name   string // program name embedded in tape/snapshot (<= 10 chars on tape)
+	Code   []byte // assembled machine code
+	Origin uint16 // load address of the first byte of Code
+	Start  uint16 // PC entry point for snapshot output (required for snapshots)
+	SP     uint16 // stack pointer for snapshot output
+	Model  Model  // target model for snapshot output
 }
 
 // EncodeTAP produces a .tap image containing the code as a single CODE block.
@@ -61,7 +62,7 @@ func EncodeTZXFromTAP(tapImage []byte) ([]byte, error) {
 
 // EncodeSNA overlays the code onto the model's boot state and emits a .sna.
 func EncodeSNA(r Request) ([]byte, error) {
-	s, err := overlay(r)
+	s, err := Overlay(r)
 	if err != nil {
 		return nil, err
 	}
@@ -73,16 +74,29 @@ func EncodeSNA(r Request) ([]byte, error) {
 
 // EncodeZ80 overlays the code onto the model's boot state and emits a v3 .z80.
 func EncodeZ80(r Request) ([]byte, error) {
-	s, err := overlay(r)
+	s, err := Overlay(r)
 	if err != nil {
 		return nil, err
 	}
 	return snapshot.EncodeZ80v3(s)
 }
 
-// overlay loads the model's boot snapshot, writes the code into memory at its
+// EncodeSZX overlays the code onto the model's boot state and emits a .szx.
+func EncodeSZX(r Request) ([]byte, error) {
+	s, err := Overlay(r)
+	if err != nil {
+		return nil, err
+	}
+	return szx.Encode(s)
+}
+
+// Overlay loads the model's boot snapshot, writes the code into memory at its
 // origin, and sets PC and SP so the snapshot runs the user program on load.
-func overlay(r Request) (*snapshot.MachineState, error) {
+// Exported (not just used internally by EncodeSNA/EncodeZ80) so a caller
+// wanting a different target format -- szx.Encode, for instance, which
+// takes the same *snapshot.MachineState -- doesn't have to duplicate this
+// procedure to get one.
+func Overlay(r Request) (*snapshot.MachineState, error) {
 	s, err := bootState(r.Model)
 	if err != nil {
 		return nil, err

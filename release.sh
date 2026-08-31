@@ -93,7 +93,7 @@ if $CUT_ZIP; then
     ZIP="zentools-v${VERSION}-checkpoint.zip"
     rm -f "$ZIP"
     zip -rq "$ZIP" . \
-        -x '.git/*' -x 'build/*' -x 'bin/*' -x 'attic/*' \
+        -x '.git/*' -x 'build/*' -x 'bin/*' -x 'dist/*' -x 'attic/*' \
         -x '*.DS_Store' -x 'zentools-v*.zip' -x "$ZIP"
     ok "wrote $ZIP ($(wc -c < "$ZIP") bytes)"
 else

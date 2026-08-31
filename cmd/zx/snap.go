@@ -17,6 +17,7 @@ import (
 
 	"github.com/ha1tch/zentools/pkg/build"
 	"github.com/ha1tch/zentools/pkg/snapshot"
+	"github.com/ha1tch/zentools/pkg/szx"
 )
 
 // permuteArgs reorders args so that all flags precede positional arguments,
@@ -72,8 +73,8 @@ func snapUsage() {
 	fmt.Fprintln(os.Stderr, `zx snap - create and inspect snapshots
 
 Usage:
-  zx snap make <input.bin> --start <addr> [--sna] [--z80] [options]
-  zx snap info <file.sna|file.z80>
+  zx snap make <input.bin> --start <addr> [--sna] [--z80] [--szx] [options]
+  zx snap info <file.sna|file.z80|file.szx>
 
 Make options:
   --origin <addr>   load address of the binary (default 0x8000)
@@ -82,6 +83,7 @@ Make options:
   --model  <name>   48k, 128k, plus2, plus2a, plus3 (default 48k)
   --sna             write a .sna snapshot
   --z80             write a .z80 (v3) snapshot
+  --szx             write a .szx (zx-state) snapshot
   -o <basename>     output basename (default: input name)
 
 Addresses may be hex (0x8000, $8000) or decimal (32768).`)
@@ -96,16 +98,17 @@ func snapMake(args []string) error {
 		model   = fs.String("model", "48k", "target model")
 		wantSNA = fs.Bool("sna", false, "write .sna")
 		wantZ80 = fs.Bool("z80", false, "write .z80")
+		wantSZX = fs.Bool("szx", false, "write .szx")
 		outBase = fs.String("o", "", "output basename")
 	)
-	if err := fs.Parse(permuteArgs(args, map[string]bool{"sna": true, "z80": true})); err != nil {
+	if err := fs.Parse(permuteArgs(args, map[string]bool{"sna": true, "z80": true, "szx": true})); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {
 		return fmt.Errorf("expected one input binary; see 'zx snap'")
 	}
-	if !*wantSNA && !*wantZ80 {
-		return fmt.Errorf("choose at least one of --sna, --z80")
+	if !*wantSNA && !*wantZ80 && !*wantSZX {
+		return fmt.Errorf("choose at least one of --sna, --z80, --szx")
 	}
 	if *startS == "" {
 		return fmt.Errorf("--start <addr> is required")
@@ -164,6 +167,15 @@ func snapMake(args []string) error {
 			return err
 		}
 	}
+	if *wantSZX {
+		img, err := build.EncodeSZX(req)
+		if err != nil {
+			return err
+		}
+		if err := writeOut(base+".szx", img); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -187,8 +199,17 @@ func snapInfo(args []string) error {
 		} else {
 			s, err = snapshot.DecodeSNA(data)
 		}
+	case ".szx":
+		s, err = szx.Decode(data)
 	default:
-		return fmt.Errorf("unrecognised snapshot extension %q", filepath.Ext(path))
+		// No recognised extension (e.g. called via `zx info` on an
+		// extensionless file) -- fall back to the ZXST signature, the
+		// one snapshot format here that has one.
+		if len(data) >= 4 && string(data[:4]) == "ZXST" {
+			s, err = szx.Decode(data)
+		} else {
+			return fmt.Errorf("unrecognised snapshot extension %q", filepath.Ext(path))
+		}
 	}
 	if err != nil {
 		return fmt.Errorf("decoding snapshot: %w", err)

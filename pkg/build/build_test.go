@@ -70,7 +70,6 @@ func TestSPCollisionWarning(t *testing.T) {
 	}
 }
 
-
 func TestEncodeTAPWithLoader(t *testing.T) {
 	r := Request{Name: "screenfill", Code: sampleCode, Origin: 0x8000, Start: 0x8000}
 	img, err := EncodeTAPWithLoader(r)
