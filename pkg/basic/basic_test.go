@@ -113,3 +113,96 @@ func TestLooksTokenisedRejectsText(t *testing.T) {
 		t.Error("plain text source misidentified as tokenised")
 	}
 }
+
+// TestKeywordDoesNotConsumeLongerIdentifier confirms matchToken's word
+// boundary check: a keyword that is a prefix of a longer run of letters
+// (e.g. "TO" inside "TOTAL", "FOR" inside "FORMAT") must not be torn out
+// of it, regardless of whether the source has a space before it -- this
+// was a real bug, found and verified against a genuine ZX Spectrum +3
+// tokenised fixture (pkg/basic/testdata/loader.tok) showing the opposite,
+// legitimate case: a keyword immediately followed by a bare digit (no
+// separator at all) is correctly a keyword, not blocked by this check.
+func TestKeywordDoesNotConsumeLongerIdentifier(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want string // the exact detokenised line
+	}{
+		{"TOTAL after a space stays one identifier", "10 LET TOTAL=5", "10  LET TOTAL=5\n"},
+		{"FORMAT stays one keyword, not FOR+MAT", "10 FORMAT \"a\";800", "10  FORMAT \"a\";800\n"},
+		{"a real keyword immediately before a digit still tokenises", "10 CLEAR32767", "10  CLEAR 32767\n"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			tok, err := Tokenise(c.src)
+			if err != nil {
+				t.Fatalf("Tokenise: %v", err)
+			}
+			back, err := Detokenise(tok)
+			if err != nil {
+				t.Fatalf("Detokenise: %v", err)
+			}
+			if back != c.want {
+				t.Errorf("round trip = %q, want %q", back, c.want)
+			}
+		})
+	}
+
+	// The one genuinely ambiguous case: no space at all between two
+	// letter-ending keywords ("LETTOTAL"). A tokeniser cannot correctly
+	// guess a boundary here, so the safe behaviour is refusing to
+	// tokenise LET at all, leaving the literal text -- not silently
+	// mis-tokenising it either way.
+	t.Run("no separator between two keyword-shaped runs is left literal", func(t *testing.T) {
+		tok, err := Tokenise("10 LETTOTAL=5")
+		if err != nil {
+			t.Fatalf("Tokenise: %v", err)
+		}
+		back, err := Detokenise(tok)
+		if err != nil {
+			t.Fatalf("Detokenise: %v", err)
+		}
+		if !strings.Contains(back, "LETTOTAL") {
+			t.Errorf("round trip = %q, want literal LETTOTAL preserved", back)
+		}
+	})
+}
+
+// TestKeywordDropsOneFollowingSpace confirms a real, user-reported bug fix:
+// LIST on real ROM hardware always supplies its own space after a keyword
+// token, regardless of what is stored -- so a single source-typed space
+// there was being stored too, and the two combined into a visible double
+// space ("LET  TOTAL" instead of "LET TOTAL"). Verified against a real ZX
+// Spectrum +3 fixture (loader.tok: BORDER/PAPER immediately precede a bare
+// digit, confirming keywords never store a separating space on real
+// hardware) and against genuine emulator LIST output via zx scr ocr, not
+// just this package's own round trip. Only the first space is dropped; a
+// second, deliberate one is kept.
+func TestKeywordDropsOneFollowingSpace(t *testing.T) {
+	cases := []struct {
+		src  string
+		want string
+	}{
+		{"10 LET TOTAL=5", "10  LET TOTAL=5\n"},
+		{"10 FOR I=1 TO 5", "10  FOR I=1 TO 5\n"},
+		{"10 NEXT I", "10  NEXT I\n"},
+		{"10 PRINT \"hi\"", "10  PRINT \"hi\"\n"},
+		// A second space is a deliberate extra gap and survives.
+		{"10 LET  TOTAL=5", "10  LET  TOTAL=5\n"},
+	}
+	for _, c := range cases {
+		t.Run(c.src, func(t *testing.T) {
+			tok, err := Tokenise(c.src)
+			if err != nil {
+				t.Fatalf("Tokenise: %v", err)
+			}
+			back, err := Detokenise(tok)
+			if err != nil {
+				t.Fatalf("Detokenise: %v", err)
+			}
+			if back != c.want {
+				t.Errorf("round trip = %q, want %q", back, c.want)
+			}
+		})
+	}
+}

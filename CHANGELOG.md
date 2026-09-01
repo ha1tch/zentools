@@ -4,6 +4,36 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.5] - 2026-09-01
+
+### Fixed
+
+- **A real, silent mis-tokenisation bug in `pkg/basic`**: `matchToken` was
+  a bare prefix check with no word-boundary awareness, so any variable
+  name that happened to start with a keyword -- `TOTAL` (contains
+  `TO`), `FORMAT` (contains `FOR`), and many more -- was torn apart
+  during tokenisation regardless of spacing. Fixed with a boundary
+  check: a keyword match immediately followed by another letter is now
+  treated as the start of a longer identifier, not a real keyword
+  occurrence. A following digit is unaffected (confirmed against a
+  real ZX Spectrum +3 fixture: `BORDER`/`PAPER` both precede a bare
+  digit with no separator at all). The one genuinely ambiguous case --
+  two keyword-shaped runs with no separator at all, e.g. `LETTOTAL` --
+  is left as literal text rather than guessed wrong either way.
+- **Tape listings no longer show doubled spaces after keywords.** A
+  single source-typed space immediately after a keyword token was
+  being stored, and real ROM `LIST` rendering always supplies its own
+  space after a keyword token regardless of what's stored -- the two
+  combined into a visible double space (`LET  TOTAL` instead of
+  `LET TOTAL`). Exactly one following space is now dropped at
+  tokenise time; a second, deliberate one is still kept. Verified
+  against real emulator `LIST` output via `zx scr ocr` (pixel-exact
+  ROM font matching, not eyeballed), not just this package's own round
+  trip.
+
+Both fixes affect anywhere `pkg/basic.Tokenise` is used: `totap`,
+`zx basic tokenise`, and `zx tap make --basic`.
+
 ## [0.8.4] - 2026-09-01
 
 ### Added

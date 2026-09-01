@@ -140,6 +140,21 @@ func tokeniseLine(line string, cfg *config) ([]byte, int, error) {
 			if tok == remToken {
 				out = append(out, body[j:]...)
 				j = len(body)
+				continue
+			}
+			// A single space immediately after a keyword token is never
+			// stored. Confirmed against a real ZX Spectrum +3 tokenised
+			// fixture (loader.tok: BORDER and PAPER both immediately
+			// precede a bare digit, no separator at all) and against
+			// LIST output on real ROM rendering: LIST always supplies
+			// its own space after a keyword token regardless of what is
+			// stored, so a source-typed space there is redundant and,
+			// stored literally, doubles up on screen (e.g. "LET  TOTAL"
+			// instead of "LET TOTAL"). Only one space is consumed here;
+			// additional spaces beyond the first are the source's own
+			// deliberate extra visual gap and are kept.
+			if j < len(body) && body[j] == ' ' {
+				j++
 			}
 			continue
 		}
@@ -182,9 +197,34 @@ func matchToken(s string, cfg *config) (byte, int, bool) {
 		candidate = strings.ToUpper(s)
 	}
 	for _, e := range tokenValues {
-		if strings.HasPrefix(candidate, e.text) {
-			return e.token, len(e.text), true
+		if !strings.HasPrefix(candidate, e.text) {
+			continue
 		}
+		// A keyword ending in a letter, immediately followed by another
+		// letter, is not a real keyword occurrence -- it is the start of
+		// a longer identifier the keyword's own text happens to prefix
+		// (e.g. "TO" inside "TOTAL", "FOR" inside "FORMAT"). Confirmed as
+		// a real bug, not a theoretical one: a naive prefix match tore
+		// "TOTAL" into the TO token plus literal "TAL", identically
+		// whether or not the source had a space before it. Reject and
+		// let a shorter keyword or, more often, no match at all take
+		// over, falling through to plain identifier handling. Digits are
+		// not identifier-continuation characters here (Sinclair BASIC
+		// simple variable names are letters only) and are never blocked
+		// by this check -- confirmed against a real ZX Spectrum +3
+		// tokenised fixture, where BORDER and PAPER are both stored
+		// immediately followed by a bare digit, no separator at all.
+		last := e.text[len(e.text)-1]
+		if (last >= 'A' && last <= 'Z') || (last >= 'a' && last <= 'z') {
+			next := len(e.text)
+			if next < len(s) {
+				c := s[next]
+				if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') {
+					continue
+				}
+			}
+		}
+		return e.token, len(e.text), true
 	}
 	return 0, 0, false
 }
