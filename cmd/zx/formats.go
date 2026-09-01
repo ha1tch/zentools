@@ -45,18 +45,79 @@ Usage:
 func tapMake(args []string) error {
 	fs := flag.NewFlagSet("tap make", flag.ContinueOnError)
 	var (
-		name    = fs.String("name", "", "tape block name (<=10 chars)")
-		originS = fs.String("origin", "0x8000", "load address")
-		loader  = fs.Bool("loader", false, "prepend a BASIC auto-run loader")
-		startS  = fs.String("start", "", "entry point (required with --loader)")
-		out     = fs.String("o", "", "output file (required)")
+		name          = fs.String("name", "", "tape block name (<=10 chars)")
+		originS       = fs.String("origin", "0x8000", "load address (binary mode only)")
+		loader        = fs.Bool("loader", false, "prepend a BASIC auto-run loader (binary mode only)")
+		startS        = fs.String("start", "", "entry point (required with --loader)")
+		basicMode     = fs.Bool("basic", false, "treat input as BASIC source text, producing a Program block")
+		autostart     = fs.Uint("autostart", 0, "auto-run line number (--basic only)")
+		caseSensitive = fs.Bool("case-sensitive", false, "require exact keyword case (--basic only)")
+		out           = fs.String("o", "", "output file (required)")
 	)
-	if err := fs.Parse(permuteArgs(args, map[string]bool{"loader": true})); err != nil {
+	boolFlags := map[string]bool{"loader": true, "basic": true, "case-sensitive": true}
+	if err := fs.Parse(permuteArgs(args, boolFlags)); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 || *out == "" {
-		return fmt.Errorf("usage: zx tap make <input.bin> -o out.tap")
+		return fmt.Errorf("usage: zx tap make <input> [--basic|--name|--origin|--loader flags] -o out.tap")
 	}
+	if *basicMode && *loader {
+		return fmt.Errorf("--basic and --loader are mutually exclusive (a BASIC Program block doesn't take an auto-run CODE loader)")
+	}
+
+	// --name's zero value ("") is indistinguishable from "not passed" via
+	// *name alone; fs.Visit tells them apart, so an explicitly empty name
+	// stays empty rather than silently falling back to the input's own
+	// filename -- matching what a chunk cut with an empty name upstream
+	// (e.g. a bas2tap-produced tape) should reproduce exactly if asked to.
+	//
+	// --autostart has the identical problem, and it's a more serious one:
+	// 0 is a genuinely valid BASIC line number (0..9999 all are), so it
+	// cannot double as "no autostart" the way a bare *autostart == 0
+	// check would assume. The real sentinel -- confirmed against the
+	// TAP format spec and pkg/tap's own EncodeProgram doc comment and
+	// test fixtures -- is 32768 (any value >= 0x8000). Without this,
+	// every tape made without an explicit --autostart was silently
+	// encoded with line 0 as its autostart target, and Sinclair BASIC's
+	// own line lookup runs from the next existing line when there's no
+	// exact match -- so it would auto-run programs nobody asked to
+	// auto-run, not "load and do nothing" as a missing --autostart
+	// should mean.
+	nameProvided, autostartProvided := false, false
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "name":
+			nameProvided = true
+		case "autostart":
+			autostartProvided = true
+		}
+	})
+	nm := *name
+	if !nameProvided {
+		nm = baseName(fs.Arg(0))
+	}
+
+	if *basicMode {
+		src, err := os.ReadFile(fs.Arg(0))
+		if err != nil {
+			return err
+		}
+		var opts []basic.Option
+		if *caseSensitive {
+			opts = append(opts, basic.CaseSensitive())
+		}
+		tok, err := basic.Tokenise(string(src), opts...)
+		if err != nil {
+			return err
+		}
+		start := uint16(0x8000)
+		if autostartProvided {
+			start = uint16(*autostart)
+		}
+		img := tap.EncodeProgram(nm, tok, start)
+		return writeOut(*out, img)
+	}
+
 	code, err := os.ReadFile(fs.Arg(0))
 	if err != nil {
 		return err
@@ -64,10 +125,6 @@ func tapMake(args []string) error {
 	origin, err := parseAddr(*originS)
 	if err != nil {
 		return fmt.Errorf("invalid --origin: %w", err)
-	}
-	nm := *name
-	if nm == "" {
-		nm = baseName(fs.Arg(0))
 	}
 	req := build.Request{Name: nm, Code: code, Origin: origin}
 

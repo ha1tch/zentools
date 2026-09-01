@@ -53,9 +53,29 @@ func main() {
 	}
 	inputFile, outputFile := args[0], args[1]
 
+	// --autostart 0 is a genuinely valid BASIC line number (0..9999 all
+	// are), so a bare *autostart value cannot double as "no autostart" --
+	// confirmed against the TAP format spec and pkg/tap's own
+	// EncodeProgram doc comment: the real sentinel is 32768 (0x8000).
+	// flag.Visit distinguishes "not passed" from "explicitly passed as
+	// 0", so a --basic tape made without --autostart correctly loads
+	// without running, rather than auto-running from whatever line
+	// Sinclair BASIC's own line-lookup falls back to when line 0 does
+	// not exist in the program.
+	autostartProvided := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "autostart" {
+			autostartProvided = true
+		}
+	})
+	start := uint16(0x8000)
+	if autostartProvided {
+		start = uint16(*autostart)
+	}
+
 	var err error
 	if *basicMode {
-		err = convertBasic(inputFile, outputFile, *name, uint16(*autostart), *caseIndependent)
+		err = convertBasic(inputFile, outputFile, *name, start, *caseIndependent)
 	} else {
 		err = convertBinary(inputFile, outputFile, *name, uint16(*address))
 	}

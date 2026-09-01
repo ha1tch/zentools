@@ -2,7 +2,7 @@
 
 zentools is the canonical Go library for ZX Spectrum binary formats: tape images,
 snapshots, disk images, and BASIC tokenisation. It exists so that the tools in
-the ecosystem (zenas, zenzx, plus3, and future ones) share one verified
+the ecosystem (zenas, zenzx, plus3, zendis, and future ones) share one verified
 implementation of each format instead of maintaining several partial,
 "sometimes badly" copies.
 
@@ -41,19 +41,26 @@ github.com/ha1tch/zentools
 ├── pkg/
 │   ├── tap/         TAP tape images. Encode/decode CODE and Program blocks.
 │   ├── tzx/         TZX tape images. Encode (and decode) the common block set.
+│   ├── pzx/         PZX tape images, the simpler TZX successor.
 │   ├── snapshot/    .zxs / .sna / .z80 via a neutral MachineState.
 │   │   ├── state.go     MachineState and its sub-structs (the pivot type)
 │   │   ├── zxs.go       chunked ZenZX format
 │   │   ├── sna.go       48K / 128K .sna
 │   │   └── z80.go       .z80 (versioned, compressed)
+│   ├── szx/         .szx (zx-state) via the same neutral MachineState.
+│   ├── rzx/         .rzx input-recording files (embeds a snapshot block).
 │   ├── basic/       BASIC tokenise + detokenise (48K and 128K keywords).
+│   ├── scr/         .scr screens, image conversion, .cut asset collections.
+│   ├── bdf/         BDF bitmap font reader, used internally by scr's OCR.
 │   ├── build/       overlay machine code onto a boot state; emit tapes/snapshots.
 │   └── version/     library version constant.
 ├── cmd/             CLI tools over the packages.
 │   ├── maketap, totap, loadtap, tap2tzx   drop-in zxgotools replacements.
-│   └── zx/          modern unified front-end (tap, tzx, basic, snap, convert, info).
-│                    third-party deps (flags) live here, not in pkg/.
-└── (hygiene: VERSION, syncver.sh, release.sh, CHANGELOG.md, .gitignore, LICENSE)
+│   └── zx/          modern unified front-end (tap, tzx, pzx, basic, scr, snap,
+│                    rzx, convert, edit, build, info). Third-party deps (flags)
+│                    live here, not in pkg/.
+└── (hygiene: VERSION, Makefile, .repoman.json, release.sh, syncver.sh,
+    CHANGELOG.md, .gitignore, LICENSE)
 ```
 
 ## Format ownership

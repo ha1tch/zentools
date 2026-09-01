@@ -184,7 +184,7 @@ func DecodeBlock(raw []byte) (Block, error) {
 	if flag == flagHeader && len(raw) == headerLength {
 		b.IsHeader = true
 		b.Type = body[0]
-		b.Name = strings.TrimRight(string(body[1:11]), " ")
+		b.Name = strings.TrimRight(decodeSinclairName(body[1:11]), " ")
 		b.DataLength = binary.LittleEndian.Uint16(body[11:13])
 		b.Param1 = binary.LittleEndian.Uint16(body[13:15])
 		b.Param2 = binary.LittleEndian.Uint16(body[15:17])
@@ -213,12 +213,69 @@ func EncodeProgram(name string, data []byte, autostart uint16) []byte {
 	return append(out, dataBlock(data)...)
 }
 
-// clampName trims a name to the 10-character header limit.
+// clampName sanitises a name into the ZX Spectrum's own character set (see
+// sinclairName) and then trims it to the 10-character header field limit.
+// Sanitising before clamping means the byte-length truncation below can
+// never split a multi-byte UTF-8 character in two, since sinclairName's
+// output is always exactly one byte per input rune.
 func clampName(name string) string {
+	name = sinclairName(name)
 	if len(name) > 10 {
 		return name[:10]
 	}
 	return name
+}
+
+// sinclairName maps a UTF-8 string to Sinclair ASCII, the ZX Spectrum's
+// own character set: standard printable ASCII (0x20-0x7E) passes through
+// unchanged. £ and © -- confirmed against the ZX Spectrum character set
+// itself, not assumed -- are the only two non-ASCII symbols with a real
+// Sinclair counterpart, mapping to their actual Spectrum code points
+// 0x60 and 0x7F, which replace ASCII's grave accent and DEL at those same
+// positions. Every other non-ASCII character becomes an asterisk: real
+// Spectrum hardware was never Unicode-aware, so there is no sensible
+// rendering for it regardless, and an asterisk fails predictably where
+// silent byte-level truncation would otherwise deposit an orphaned,
+// meaningless byte (see clampName's own doc comment).
+func sinclairName(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case r >= 0x20 && r <= 0x7E:
+			b.WriteByte(byte(r))
+		case r == '£':
+			b.WriteByte(0x60)
+		case r == '©':
+			b.WriteByte(0x7F)
+		default:
+			b.WriteByte('*')
+		}
+	}
+	return b.String()
+}
+
+// decodeSinclairName reverses sinclairName's own encode-side mapping.
+// The two Spectrum code points with a real, distinct Unicode
+// counterpart -- 0x60 (£) and 0x7F (©) -- decode back to those actual
+// characters rather than the ASCII bytes they happen to share a
+// position with (a grave accent, DEL respectively); otherwise a name
+// this package itself encoded with £ or © would come back garbled on
+// the very next read, defeating the point of encoding it correctly in
+// the first place. Every other byte passes through unchanged, exactly
+// as a plain string(raw) conversion already did.
+func decodeSinclairName(raw []byte) string {
+	var b strings.Builder
+	for _, c := range raw {
+		switch c {
+		case 0x60:
+			b.WriteRune('£')
+		case 0x7F:
+			b.WriteRune('©')
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
 
 // WriteCodeFile assembles a CODE TAP for the given binary file and writes it to

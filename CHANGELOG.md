@@ -4,6 +4,68 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.4] - 2026-09-01
+
+### Added
+
+- **`zx tap make --basic`**: tokenises a BASIC source file straight into a
+  Program-block TAP, the `zx`-native equivalent of a standalone
+  BASIC-to-tape tool. `--autostart LINE`, `--case-sensitive` (default
+  case-insensitive, matching `zx basic tokenise`'s own convention).
+- **`Makefile`**: `build`/`install`/`test`/`vet`/`fmt`/`lint`/`cover`/
+  `tidy`/`verify`/`clean`/`release`/`cross-build`/`help`. The project
+  never had one before.
+
+### Fixed
+
+- **A real autostart bug**, in both `totap` and the new `zx tap make
+  --basic`: `--autostart` defaulted to `0`, but `0` is a genuinely
+  valid BASIC line number, not a "no autostart" sentinel -- the real
+  one, confirmed against the TAP spec and this package's own
+  `EncodeProgram` test fixtures, is `32768`. Every BASIC tape made
+  without an explicit `--autostart` was silently encoding "run from
+  line 0," and Sinclair BASIC's own line-lookup falls through to the
+  next existing line on no exact match -- so tapes were likely
+  auto-running when nobody asked for that. `--autostart 0` is now a
+  real, distinct choice from omitting the flag.
+- **Tape block names now respect the real ZX Spectrum character set.**
+  £ and © -- confirmed against the actual Spectrum charset, not
+  assumed -- map to their genuine Sinclair code points (`0x60`,
+  `0x7F`, replacing ASCII's grave accent and DEL at those positions)
+  on encode, and decode back to the same characters rather than the
+  ASCII bytes that happen to share those code points. Any other
+  non-ASCII character becomes a plain asterisk instead of being
+  silently corrupted by byte-level truncation.
+- **`release.sh`/`syncver.sh` no longer duplicate `repoman relcore`/
+  `repoman syncver`.** Both are now thin wrappers delegating entirely
+  to gorepoman, so there's exactly one implementation of each, not two
+  that can drift apart. `.repoman.json` populated for real (it was
+  empty); the vendored, outdated (`0.8.0` vs. gorepoman's current
+  `0.13.4`) Python `repoman/` copy removed, confirmed unreferenced by
+  anything first. Along the way: `repoman relcore`'s archive builtin
+  caught a real bug neither `release.sh` nor the prior `.repoman.json`
+  exclude list caught -- a `.git/*` exclude pattern that only matches
+  one path segment, silently packing the entire `.git` history into
+  every checkpoint zip built this cycle. Fixed by switching to
+  explicit archive sources instead of excluding after the fact.
+
+### Removed
+
+- **`docs/MIGRATION-STATUS.md`.** A point-in-time progress report for a
+  consolidation effort its own text declared complete, several months
+  stale, and not linked from anywhere a new reader would find it.
+
+### Documentation
+
+- **`docs/LIBRARY.md`**: `pkg/pzx`, `pkg/szx`, `pkg/rzx` now have their
+  own sections (previously undocumented despite being released since
+  0.7.0); the overview table and TOC list all ten packages correctly.
+- **`docs/ARCHITECTURE.md`**: package tree and the `cmd/zx` subcommand
+  list brought current (both were missing everything added since
+  0.7.0: `pzx`, `rzx`, `scr`, `edit`, `build`).
+- **`README.md`**: the Makefile is now mentioned.
+- HTML renderings of all manuals regenerated to match.
+
 ## [0.8.3] - 2026-08-31
 
 ### Fixed

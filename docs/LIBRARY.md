@@ -13,9 +13,12 @@ For the command-line tools built on these packages, see the
 - [Overview](#overview)
 - [pkg/tap](#pkgtap)
 - [pkg/tzx](#pkgtzx)
+- [pkg/pzx](#pkgpzx)
 - [pkg/basic](#pkgbasic)
 - [pkg/scr](#pkgscr)
 - [pkg/snapshot](#pkgsnapshot)
+- [pkg/szx](#pkgszx)
+- [pkg/rzx](#pkgrzx)
 - [pkg/build](#pkgbuild)
 - [pkg/version](#pkgversion)
 - [Composing the packages](#composing-the-packages)
@@ -25,17 +28,22 @@ For the command-line tools built on these packages, see the
 The import path root is `github.com/ha1tch/zentools`. Each package owns one
 format family:
 
-| Package         | Responsibility                                          |
-| --------------- | ------------------------------------------------------- |
-| `pkg/tap`       | TAP tape images.                                        |
-| `pkg/tzx`       | TZX tape images.                                         |
-| `pkg/basic`     | ZX BASIC tokenisation and detokenisation.               |
-| `pkg/snapshot`  | `.sna` and `.z80` snapshots, via a neutral state type.  |
-| `pkg/build`     | Overlaying code onto a boot state to emit artifacts.    |
-| `pkg/version`   | The library version constant.                           |
+| Package         | Responsibility                                                |
+| --------------- | -------------------------------------------------------------- |
+| `pkg/tap`       | TAP tape images.                                                |
+| `pkg/tzx`       | TZX tape images.                                                |
+| `pkg/pzx`       | PZX tape images, the simpler TZX successor.                     |
+| `pkg/basic`     | ZX BASIC tokenisation and detokenisation.                       |
+| `pkg/scr`       | `.scr` screens, image conversion, and `.cut` asset collections. |
+| `pkg/snapshot`  | `.sna` and `.z80` snapshots, via a neutral state type.           |
+| `pkg/szx`       | `.szx` (zx-state) snapshots, via the same neutral state type.   |
+| `pkg/rzx`       | `.rzx` input-recording files.                                    |
+| `pkg/build`     | Overlaying code onto a boot state to emit artifacts.             |
+| `pkg/version`   | The library version constant.                                    |
 
 The packages do not import one another except that `pkg/build` builds on `tap`,
-`tzx`, `basic`, and `snapshot`. A typical flow runs from source material (a
+`tzx`, `basic`, and `snapshot`, and `pkg/rzx` uses `pkg/snapshot`/`pkg/szx` to
+decode an embedded snapshot block. A typical flow runs from source material (a
 binary or BASIC text), through `build`, out to a tape or snapshot format.
 
 Install with:
@@ -205,6 +213,24 @@ image, err := tzx.EncodeFromTAP(tapImage, tzx.EncodeOptions{
 })
 ```
 
+## pkg/pzx
+
+Reads and writes PZX tape images (spec v1.0), Patrik Rak's simpler
+successor to TZX. A `File` is an ordered list of `Block`s: `HeaderBlock`
+(always first), `PulseBlock`, `DataBlock` (a byte stream as pulse-encoded
+bits), `PauseBlock`, `BrowseBlock`, `StopBlock`, and `RawBlock` for any
+tag this package does not otherwise model -- preserved verbatim on a
+round trip, per the spec's own rule for unrecognised tags.
+
+```go
+func Decode(image []byte) (*File, error)
+func Encode(f *File) ([]byte, error)
+```
+
+See the package's own doc comments for each block type's fields, and
+[the CLI manual's `zx pzx` section](CLI.md#zx-pzx) for the command-line
+surface.
+
 ## pkg/basic
 
 Tokenises ZX BASIC source text into the Spectrum's internal byte representation,
@@ -357,6 +383,43 @@ if err != nil {
 }
 sna, err := snapshot.EncodeSNA(state)
 ```
+
+## pkg/szx
+
+Reads and writes `.szx` (zx-state) snapshots (spec v1.5) via the same
+neutral `snapshot.MachineState` the `.sna`/`.z80` codecs use -- a third
+codec for one type, not a separate representation.
+
+```go
+func Decode(image []byte) (*snapshot.MachineState, error)
+func Encode(s *snapshot.MachineState) ([]byte, error)
+```
+
+Covers the CPU/paging/memory state every snapshot needs
+(`ZXSTZ80REGS`/`ZXSTSPECREGS`/`ZXSTRAMPAGE`); the spec's thirty-odd
+further peripheral block types (AY sound, joysticks, disk controllers)
+are skipped on read rather than modelled, per the spec's own rule for
+unrecognised blocks.
+
+## pkg/rzx
+
+Reads and writes RZX input-recording files (spec v0.13): a frame-by-frame
+log of what every CPU `IN` instruction returned during an actual recorded
+session, alongside the snapshot it starts from. A `File` is an ordered
+list of `Block`s: `CreatorBlock`, `SnapshotBlock` (embedded, via
+`pkg/snapshot`/`pkg/szx`, or external -- a filename reference), the
+`Frame`-based `RecordingBlock`, and the DSA `SecurityInfoBlock`/
+`SecuritySignatureBlock` pair -- decoded and re-encoded verbatim, not
+cryptographically verified.
+
+```go
+func Decode(image []byte) (*File, error)
+func Encode(f *File) ([]byte, error)
+```
+
+See the package's own doc comments for each block type's fields, and
+[the CLI manual's `zx rzx` section](CLI.md#zx-rzx) for the command-line
+surface.
 
 ## pkg/build
 

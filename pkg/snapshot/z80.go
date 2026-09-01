@@ -83,8 +83,11 @@ func EncodeZ80(s *MachineState) ([]byte, error) {
 	return out, nil
 }
 
-// DecodeZ80 decodes a .z80 v1 image into a MachineState. v2/v3 (extended
-// header, signalled by PC == 0) is not yet supported.
+// DecodeZ80 decodes a .z80 image. v1 (implicit, no extended header),
+// v2, and v3 are all handled -- an extended header (signalled by
+// PC == 0 in the v1-shaped fields) is detected and dispatched to
+// decodeZ80Extended, which covers both v2 (extLen 23) and v3
+// (extLen 54 or 55), including 128K paging.
 func DecodeZ80(image []byte) (*MachineState, error) {
 	if len(image) < z80HeaderV1Len {
 		return nil, fmt.Errorf(".z80 too short (%d bytes)", len(image))

@@ -1,1 +1,27 @@
-{}
+{
+  "version_file": "VERSION",
+  "version_targets": [
+    {
+      "file": "pkg/version/version.go",
+      "match": "const Version = \"([0-9]+\\.[0-9]+\\.[0-9]+(?:-[a-zA-Z0-9.]+)?)\""
+    }
+  ],
+  "release": {
+    "steps": [
+      {"name": "sync",  "builtin": "syncver", "always": true},
+      {"name": "build", "run": "go build ./...", "always": true},
+      {"name": "vet",   "run": "go vet ./...", "resumable": true},
+      {"name": "test",  "run": "go test ./... -count=1", "resumable": true, "timeout": 300},
+      {"name": "archive", "builtin": "archive", "always": true}
+    ],
+    "archive": {
+      "sources": [
+        ".github", ".gitignore", ".repoman.json", "CHANGELOG.md",
+        "LICENSE", "Makefile", "README.md", "VERSION", "cmd", "docs",
+        "go.mod", "pkg", "release.sh", "syncver.sh"
+      ],
+      "exclude": ["*.DS_Store"],
+      "size_warn_mb": 3
+    }
+  }
+}

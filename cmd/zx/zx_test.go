@@ -1406,3 +1406,72 @@ func TestZXTap_AppendRequiresAtLeastTwoFiles(t *testing.T) {
 		t.Fatalf("expected an error for only one input file, got nil\n%s", out)
 	}
 }
+
+func TestZXTapMake_Basic(t *testing.T) {
+	zx := buildZX(t)
+	dir := t.TempDir()
+	basPath := filepath.Join(dir, "loader.bas")
+	os.WriteFile(basPath, []byte("10 print \"hi\"\n"), 0o644)
+
+	// Default name falls back to the input's own filename, matching
+	// binary mode's existing behaviour.
+	tapPath := filepath.Join(dir, "a.tap")
+	if o, err := exec.Command(zx, "tap", "make", "--basic", basPath, "-o", tapPath).CombinedOutput(); err != nil {
+		t.Fatalf("zx tap make --basic: %v\n%s", err, o)
+	}
+	out, err := exec.Command(zx, "edit", "list", tapPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("zx edit list: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), `type=Program name="loader"`) {
+		t.Errorf("expected a Program block named \"loader\", got:\n%s", out)
+	}
+
+	// An explicitly empty --name must stay empty, not fall back to the
+	// filename -- this is the fix: fs.Visit distinguishes "not passed"
+	// from "passed as empty", where a bare *name == "" check cannot.
+	tapPath2 := filepath.Join(dir, "b.tap")
+	if o, err := exec.Command(zx, "tap", "make", "--basic", "--name", "", basPath, "-o", tapPath2).CombinedOutput(); err != nil {
+		t.Fatalf("zx tap make --basic --name \"\": %v\n%s", err, o)
+	}
+	out2, err := exec.Command(zx, "edit", "list", tapPath2).CombinedOutput()
+	if err != nil {
+		t.Fatalf("zx edit list: %v\n%s", err, out2)
+	}
+	if !strings.Contains(string(out2), `name=""`) {
+		t.Errorf("expected an empty block name to be preserved, got:\n%s", out2)
+	}
+
+	// --autostart sets the Program header's autostart line, and default
+	// case-insensitive matching (mirroring zx basic tokenise, not
+	// totap's opposite-polarity default) tokenises lowercase "print".
+	tapPath3 := filepath.Join(dir, "c.tap")
+	if o, err := exec.Command(zx, "tap", "make", "--basic", "--autostart", "10", basPath, "-o", tapPath3).CombinedOutput(); err != nil {
+		t.Fatalf("zx tap make --basic --autostart: %v\n%s", err, o)
+	}
+	out3, err := exec.Command(zx, "edit", "list", tapPath3).CombinedOutput()
+	if err != nil {
+		t.Fatalf("zx edit list: %v\n%s", err, out3)
+	}
+	if !strings.Contains(string(out3), "autostart=0x000A") {
+		t.Errorf("expected autostart=0x000A, got:\n%s", out3)
+	}
+	payloadPath := filepath.Join(dir, "payload.bin")
+	if o, err := exec.Command(zx, "edit", "extract", tapPath3, "--block", "1", "-o", payloadPath).CombinedOutput(); err != nil {
+		t.Fatalf("zx edit extract: %v\n%s", err, o)
+	}
+	detok, err := exec.Command(zx, "basic", "detokenise", payloadPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("zx basic detokenise: %v\n%s", err, detok)
+	}
+	if !strings.Contains(string(detok), "PRINT") {
+		t.Errorf("expected lowercase 'print' to tokenise to PRINT, got:\n%s", detok)
+	}
+
+	// --basic and --loader are mutually exclusive.
+	tapPath4 := filepath.Join(dir, "d.tap")
+	out4, err := exec.Command(zx, "tap", "make", "--basic", "--loader", "--start", "0x8000", basPath, "-o", tapPath4).CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected an error combining --basic and --loader, got nil\n%s", out4)
+	}
+}

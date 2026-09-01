@@ -119,12 +119,16 @@ neither, is an error.
 | `--basic`     | off     | Treat the input as BASIC source text.                |
 | `--name`      | input filename | Block name, up to ten characters.             |
 | `--address`   | 32768   | Load address (binary mode only).                     |
-| `--autostart` | 0       | Auto-run line number (BASIC mode only).              |
+| `--autostart` | *(none)* | Auto-run line number (BASIC mode only).             |
 | `-c`          | off     | Case-independent keyword matching (BASIC mode only). |
 
 In binary mode, `totap` behaves like `maketap`. In BASIC mode it tokenises the
-source into the Spectrum's internal byte format and writes a Program block. The
-`--autostart` line, if non-zero, makes the program run automatically on load.
+source into the Spectrum's internal byte format and writes a Program block.
+Omitting `--autostart` entirely means no auto-run (encoded as the TAP
+format's own sentinel, 32768) -- the tape loads and stops, ready for `RUN`.
+Passing `--autostart 0` is a real, distinct choice: autostart at line 0,
+since 0 is a genuinely valid BASIC line number, not itself a "no
+autostart" marker.
 
 By default, keyword matching in BASIC mode is case-*sensitive*: `PRINT`
 tokenises but `print` is kept as literal text. Passing `-c` makes matching
@@ -245,13 +249,41 @@ decimal (`32768`).
 
 ```
 zx tap make <input.bin> [--name N] [--origin <addr>] [--loader --start <addr>] -o out.tap
+zx tap make --basic <input.bas> [--name N] [--autostart LINE] [--case-sensitive] -o out.tap
 zx tap info <file.tap>
 zx tap append <file1.tap> <file2.tap> [<file3.tap>...] -o out.tap
 ```
 
-`make` wraps a binary as a CODE block. `--origin` sets the load address; `--name`
-sets the block name. With `--loader`, a BASIC auto-run loader is prepended so the
-tape loads and then jumps to `--start`, giving a tape that runs on its own.
+`make` wraps a binary as a CODE block by default. `--origin` sets the load
+address; `--name` sets the block name (defaults to the input filename;
+pass `--name ""` explicitly to force a genuinely empty name, e.g. to
+reproduce another tool's tape byte-for-byte). Names are sanitised into
+the ZX Spectrum's own character set: standard ASCII passes through
+unchanged, £ and © map to their real Sinclair code points (0x60, 0x7F --
+confirmed against the actual ZX Spectrum character set, not assumed --
+replacing ASCII's grave accent and DEL at those same positions), and any
+other non-ASCII character becomes a plain asterisk rather than being
+silently corrupted by byte-level truncation. `zx tap info`/`zx edit list`
+decode names symmetrically: a name encoded with £ or © reads back as the
+actual character, not the ASCII byte (a grave accent, DEL) that happens
+to share that code point. With `--loader`, a BASIC auto-run loader is
+prepended so the tape loads and then jumps to
+`--start`, giving a tape that runs on its own.
+
+With `--basic`, `make` instead tokenises a BASIC source text file (the
+same tokeniser `zx basic tokenise` uses) and wraps it as a Program block
+rather than a CODE block -- the `zx`-native equivalent of a standalone
+BASIC-to-tape tool. `--autostart LINE` sets the line the program jumps to
+on load; the *absence* of `--autostart` means no auto-run at all (the
+tape loads and simply stops, ready for `RUN`), encoded as the TAP
+format's own real sentinel of 32768 -- not 0, which is itself a genuinely
+valid BASIC line number, not a "no autostart" marker. `--autostart 0`
+therefore means exactly what it says: autostart at line 0, a real
+choice, distinct from omitting the flag entirely. Keyword matching is
+case-*insensitive* by default (`print` tokenises the same as `PRINT`),
+matching `zx basic tokenise`'s own convention; pass `--case-sensitive`
+to require exact case. `--basic` and `--loader` are mutually exclusive --
+a Program block does not take a CODE auto-run loader.
 
 `info` lists the blocks in a tape, showing type, name, load address, and
 checksum status.

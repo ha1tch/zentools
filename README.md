@@ -200,7 +200,9 @@ go get github.com/ha1tch/zentools@latest   # library
 go build ./...                             # command-line tools
 ```
 
-Requires Go 1.25 or later.
+Requires Go 1.25 or later. A `Makefile` covers the rest of the working
+loop -- `make build`, `make test`, `make lint`, `make release
+VERSION=x.y.z`, `make cross-build`; run `make help` for the full list.
 
 ## Library
 

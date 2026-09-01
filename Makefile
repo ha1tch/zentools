@@ -1,8 +1,11 @@
 # Makefile for zentools
 #
 # Wraps the conventions already established by .github/workflows/ and
-# release.sh/syncver.sh -- this doesn't invent new ones. `make help` lists
-# every target; `make` alone runs the same build+vet+test a PR check does.
+# repoman (release and version-sync logic lives in .repoman.json,
+# driven by `repoman relcore`/`repoman syncver` -- release.sh and
+# syncver.sh are thin wrappers around the same two commands, not a
+# second implementation). `make help` lists every target; `make` alone
+# runs the same build+vet+test a PR check does.
 
 SHELL := /usr/bin/env bash
 .SHELLFLAGS := -eu -o pipefail -c
@@ -20,7 +23,7 @@ GOFLAGS  ?=
 # Every target here is a command name or a workflow step, never a real
 # output file this Makefile could compare mtimes against usefully.
 .PHONY: all build install test test-race vet fmt fmt-check lint cover \
-        clean release dist cross-build tidy verify help $(CMDS)
+        clean release release-resume dist cross-build tidy verify help $(CMDS)
 
 ## all: build, vet, and test -- the same sequence a PR check runs (default target)
 all: build vet test
@@ -81,10 +84,14 @@ clean:
 	rm -rf $(BIN_DIR) $(DIST_DIR)
 	rm -f zentools-v*-checkpoint.zip
 
-## release: run release.sh for VERSION (defaults to the VERSION file's own value)
+## release: run repoman relcore for VERSION (defaults to the VERSION file's own value)
 ##          usage: make release VERSION=0.9.0
 release:
-	./release.sh $(VERSION)
+	repoman relcore $(VERSION)
+
+## release-resume: resume a release that failed partway through
+release-resume:
+	repoman relcore $(VERSION) --resume
 
 # Every target cross-build.yml covers, as a plain Make variable -- kept
 # here rather than inside the recipe's own shell string, since a

@@ -10,7 +10,8 @@
 <div class="zsp-border">
 <div class="zsp-page">
 <div class="zsp-nav">
-<a href="CLI.html">CLI manual</a><a href="TAPE-HANDLING.html">Tape handling</a><a href="SPRITE-HANDLING.html">Sprite handling</a><a href="LIBRARY.html">Library</a><a href="ARCHITECTURE.html">Architecture</a><a href="MIGRATION-STATUS.html">Migration status</a>
+<a href="CLI.html">CLI manual</a><a href="TAPE-HANDLING.html">Tape handling</a><a href="SPRITE-HANDLING.html">Sprite handling</a><a href="LIBRARY.html">Library</a><a href="ARCHITECTURE.html">Architecture</a>
+
 </div>
 <div class="zsp-kicker">zentools manual</div>
 <h1 id="zentools-command-line-tools">zentools command-line tools</h1>
@@ -161,7 +162,7 @@ given; supplying both, or neither, is an error.</p>
 </tr>
 <tr class="odd">
 <td><code>--autostart</code></td>
-<td>0</td>
+<td><em>(none)</em></td>
 <td>Auto-run line number (BASIC mode only).</td>
 </tr>
 <tr class="even">
@@ -173,8 +174,12 @@ given; supplying both, or neither, is an error.</p>
 </table>
 <p>In binary mode, <code>totap</code> behaves like <code>maketap</code>.
 In BASIC mode it tokenises the source into the Spectrum's internal byte
-format and writes a Program block. The <code>--autostart</code> line, if
-non-zero, makes the program run automatically on load.</p>
+format and writes a Program block. Omitting <code>--autostart</code>
+entirely means no auto-run (encoded as the TAP format's own sentinel,
+32768) -- the tape loads and stops, ready for <code>RUN</code>. Passing
+<code>--autostart 0</code> is a real, distinct choice: autostart at line
+0, since 0 is a genuinely valid BASIC line number, not itself a "no
+autostart" marker.</p>
 <p>By default, keyword matching in BASIC mode is
 case-<em>sensitive</em>: <code>PRINT</code> tokenises but
 <code>print</code> is kept as literal text. Passing <code>-c</code>
@@ -341,13 +346,44 @@ any command with no arguments prints its own help.</p>
 (<code>32768</code>).</p>
 <h3 id="zx-tap">zx tap</h3>
 <pre><code>zx tap make &lt;input.bin&gt; [--name N] [--origin &lt;addr&gt;] [--loader --start &lt;addr&gt;] -o out.tap
+zx tap make --basic &lt;input.bas&gt; [--name N] [--autostart LINE] [--case-sensitive] -o out.tap
 zx tap info &lt;file.tap&gt;
 zx tap append &lt;file1.tap&gt; &lt;file2.tap&gt; [&lt;file3.tap&gt;...] -o out.tap</code></pre>
-<p><code>make</code> wraps a binary as a CODE block.
+<p><code>make</code> wraps a binary as a CODE block by default.
 <code>--origin</code> sets the load address; <code>--name</code> sets
-the block name. With <code>--loader</code>, a BASIC auto-run loader is
-prepended so the tape loads and then jumps to <code>--start</code>,
-giving a tape that runs on its own.</p>
+the block name (defaults to the input filename; pass
+<code>--name ""</code> explicitly to force a genuinely empty name, e.g.
+to reproduce another tool's tape byte-for-byte). Names are sanitised
+into the ZX Spectrum's own character set: standard ASCII passes through
+unchanged, £ and © map to their real Sinclair code points (0x60, 0x7F --
+confirmed against the actual ZX Spectrum character set, not assumed --
+replacing ASCII's grave accent and DEL at those same positions), and any
+other non-ASCII character becomes a plain asterisk rather than being
+silently corrupted by byte-level truncation.
+<code>zx tap info</code>/<code>zx edit list</code> decode names
+symmetrically: a name encoded with £ or © reads back as the actual
+character, not the ASCII byte (a grave accent, DEL) that happens to
+share that code point. With <code>--loader</code>, a BASIC auto-run
+loader is prepended so the tape loads and then jumps to
+<code>--start</code>, giving a tape that runs on its own.</p>
+<p>With <code>--basic</code>, <code>make</code> instead tokenises a
+BASIC source text file (the same tokeniser
+<code>zx basic tokenise</code> uses) and wraps it as a Program block
+rather than a CODE block -- the <code>zx</code>-native equivalent of a
+standalone BASIC-to-tape tool. <code>--autostart LINE</code> sets the
+line the program jumps to on load; the <em>absence</em> of
+<code>--autostart</code> means no auto-run at all (the tape loads and
+simply stops, ready for <code>RUN</code>), encoded as the TAP format's
+own real sentinel of 32768 -- not 0, which is itself a genuinely valid
+BASIC line number, not a "no autostart" marker.
+<code>--autostart 0</code> therefore means exactly what it says:
+autostart at line 0, a real choice, distinct from omitting the flag
+entirely. Keyword matching is case-<em>insensitive</em> by default
+(<code>print</code> tokenises the same as <code>PRINT</code>), matching
+<code>zx basic tokenise</code>'s own convention; pass
+<code>--case-sensitive</code> to require exact case.
+<code>--basic</code> and <code>--loader</code> are mutually exclusive --
+a Program block does not take a CODE auto-run loader.</p>
 <p><code>info</code> lists the blocks in a tape, showing type, name,
 load address, and checksum status.</p>
 <p><code>append</code> combines two or more TAP files into one. This is

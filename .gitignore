@@ -1,6 +1,7 @@
 # Build output (never commit binaries)
 /bin/
 /build/
+/dist/
 *.exe
 *.linux
 *.linux32
@@ -8,6 +9,11 @@
 *.rpi
 *.rpi64
 *.win32.exe
+
+# repoman relcore's own release artifacts
+/.release-state.json
+/release-*.log
+/zentools-v*-checkpoint.zip
 
 # Test artifacts
 *.tap

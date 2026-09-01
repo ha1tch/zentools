@@ -67,6 +67,67 @@ func TestNamePadding(t *testing.T) {
 	}
 }
 
+// TestNameSinclairCharset confirms name sanitisation matches the real ZX
+// Spectrum character set: £ and © -- the only two non-ASCII symbols with
+// a genuine Sinclair counterpart -- map to their real Spectrum code
+// points (0x60, 0x7F, replacing ASCII's grave accent and DEL at those
+// same positions), and every other non-ASCII character becomes a plain
+// asterisk rather than being silently mangled by byte-level truncation.
+func TestNameSinclairCharset(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want byte // the single interesting byte, at index 0 unless noted
+	}{
+		{"pound sign maps to Sinclair 0x60", "£GAME", 0x60},
+		{"copyright sign maps to Sinclair 0x7F", "©GAME", 0x7F},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := EncodeCode(c.in, []byte{0x00}, 0x8000)
+			name := got[4:14]
+			if name[0] != c.want {
+				t.Errorf("first name byte = 0x%02X, want 0x%02X (full name %q)", name[0], c.want, name)
+			}
+		})
+	}
+
+	t.Run("other non-ASCII becomes an asterisk", func(t *testing.T) {
+		got := EncodeCode("café", []byte{0x00}, 0x8000)
+		name := got[4:14]
+		if string(name) != "caf*      " {
+			t.Errorf("name = %q, want %q", name, "caf*      ")
+		}
+	})
+
+	t.Run("a multi-byte character straddling the 10-byte truncation point never splits", func(t *testing.T) {
+		// "ABCDEFGHI" is 9 bytes, then a 3-byte UTF-8 character, then more --
+		// sanitising to one asterisk byte before truncating means the cut
+		// always lands cleanly, unlike raw name[:10] on the UTF-8 source.
+		got := EncodeCode("ABCDEFGHI\u65e5OK", []byte{0x00}, 0x8000)
+		name := got[4:14]
+		if string(name) != "ABCDEFGHI*" {
+			t.Errorf("name = %q, want %q", name, "ABCDEFGHI*")
+		}
+	})
+
+	t.Run("decoding reverses the encode-side mapping, not just the bytes", func(t *testing.T) {
+		// A round trip through Decode must show the actual £ and © runes
+		// back, not the ASCII bytes (grave accent, DEL) that happen to
+		// share those code points -- otherwise a name this package
+		// itself encoded correctly would come back garbled on the very
+		// next read.
+		img := EncodeCode("£1©", []byte{0x00}, 0x8000)
+		blocks, err := Decode(img)
+		if err != nil {
+			t.Fatalf("Decode: %v", err)
+		}
+		if blocks[0].Name != "£1©" {
+			t.Errorf("decoded name = %q, want %q", blocks[0].Name, "£1©")
+		}
+	})
+}
+
 func TestDecodeRoundTrip(t *testing.T) {
 	data := []byte{0x60, 0x0D, 0xF0, 0x0D}
 	img := EncodeCode("GAME", data, 0x8000)
