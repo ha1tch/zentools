@@ -4,6 +4,34 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.6] - 2026-09-02
+
+### Fixed
+
+- **A second, real half of the keyword-spacing bug, found by an
+  independent tester (Jim Blimey) directly on real 128K/+3 hardware.**
+  0.8.5 only ever removed a space stored *after* a keyword token; a
+  space immediately *before* one -- exactly what a keyword right
+  after a colon (`POKE 1,2: OUT 3,4`) or a closing quote
+  (`LOAD "" CODE 100`) hits -- was still being stored and still
+  doubling up on screen. Confirmed against the same real ZX Spectrum
+  +3 fixture used for the first half of this fix: `loader.tok` has
+  zero bytes between the colon and `PAPER`, zero between the closing
+  quote and `CODE`. `pkg/basic/tokenise.go` now drops one space on
+  either side of a keyword match, symmetrically.
+- **A second, independent bug in `pkg/basic/detokenise.go`**, found
+  while fixing the above: it only ever synthesised a space *after* a
+  rendered token, never before, so a keyword with nothing stored on
+  its leading side rendered running into whatever preceded it (`FOR
+  I=1 TO 5` came back as `I=1TO 5`). Fixed symmetrically alongside the
+  tokeniser fix, and re-verified: the exact tape reported as broken
+  now detokenises clean, single-spaced throughout, matching real ROM
+  `LIST` output on both 48K and (once its own separate, real
+  `LOAD "T:"` vs `LOAD ""` quirk was accounted for) `+3` hardware.
+
+Both fixes affect anywhere `pkg/basic.Tokenise`/`Detokenise` are used:
+`totap`, `zx basic tokenise`/`detokenise`, and `zx tap make --basic`.
+
 ## [0.8.5] - 2026-09-01
 
 ### Fixed

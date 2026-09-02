@@ -96,10 +96,23 @@ func detokeniseLine(text []byte) string {
 			// digits just before this marker. Skip them.
 			j += 5
 		case c >= 0xA3:
+			// A token is rendered with a space on both sides, matching
+			// what the tokeniser's own before/after rules leave out of
+			// storage in the first place (see tokenise.go). Missed on
+			// the first pass: only the trailing side was added, so a
+			// keyword straight after a digit or another token with no
+			// stored separator -- e.g. "TO" in "I=1 TO 5", stored with
+			// no space on either side -- rendered as "1TO", asymmetric
+			// for no good reason. The leading space is skipped only if
+			// the last thing written is already a space, so this never
+			// produces a double space on its own.
+			if b.Len() > 0 {
+				last := b.String()[b.Len()-1]
+				if last != ' ' {
+					b.WriteByte(' ')
+				}
+			}
 			b.WriteString(basicTokens[c])
-			// A single trailing space after the keyword keeps tokens from running
-			// together; the Spectrum's own listing spacing is contextual, and this
-			// is the safe, readable choice.
 			b.WriteByte(' ')
 		case c >= 0x20 && c < 0x7F:
 			// Printable ASCII (digits, letters, punctuation, quotes).

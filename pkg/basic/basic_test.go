@@ -128,9 +128,9 @@ func TestKeywordDoesNotConsumeLongerIdentifier(t *testing.T) {
 		src  string
 		want string // the exact detokenised line
 	}{
-		{"TOTAL after a space stays one identifier", "10 LET TOTAL=5", "10  LET TOTAL=5\n"},
-		{"FORMAT stays one keyword, not FOR+MAT", "10 FORMAT \"a\";800", "10  FORMAT \"a\";800\n"},
-		{"a real keyword immediately before a digit still tokenises", "10 CLEAR32767", "10  CLEAR 32767\n"},
+		{"TOTAL after a space stays one identifier", "10 LET TOTAL=5", "10 LET TOTAL=5\n"},
+		{"FORMAT stays one keyword, not FOR+MAT", "10 FORMAT \"a\";800", "10 FORMAT \"a\";800\n"},
+		{"a real keyword immediately before a digit still tokenises", "10 CLEAR32767", "10 CLEAR 32767\n"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -183,12 +183,55 @@ func TestKeywordDropsOneFollowingSpace(t *testing.T) {
 		src  string
 		want string
 	}{
-		{"10 LET TOTAL=5", "10  LET TOTAL=5\n"},
-		{"10 FOR I=1 TO 5", "10  FOR I=1 TO 5\n"},
-		{"10 NEXT I", "10  NEXT I\n"},
-		{"10 PRINT \"hi\"", "10  PRINT \"hi\"\n"},
+		{"10 LET TOTAL=5", "10 LET TOTAL=5\n"},
+		{"10 FOR I=1 TO 5", "10 FOR I=1 TO 5\n"},
+		{"10 NEXT I", "10 NEXT I\n"},
+		{"10 PRINT \"hi\"", "10 PRINT \"hi\"\n"},
 		// A second space is a deliberate extra gap and survives.
-		{"10 LET  TOTAL=5", "10  LET  TOTAL=5\n"},
+		{"10 LET  TOTAL=5", "10 LET  TOTAL=5\n"},
+	}
+	for _, c := range cases {
+		t.Run(c.src, func(t *testing.T) {
+			tok, err := Tokenise(c.src)
+			if err != nil {
+				t.Fatalf("Tokenise: %v", err)
+			}
+			back, err := Detokenise(tok)
+			if err != nil {
+				t.Fatalf("Detokenise: %v", err)
+			}
+			if back != c.want {
+				t.Errorf("round trip = %q, want %q", back, c.want)
+			}
+		})
+	}
+}
+
+// TestKeywordAfterColonOrQuote confirms a real bug report, found by a
+// second, independent tester (Jim Blimey) directly on real 128K/+3
+// hardware, that the first two fixes in this file both missed: a
+// keyword immediately after a colon (a new statement) or a closing
+// quote (the end of a string literal) still showed a doubled space --
+// "OUT" after ": " in "POKE 1,2: OUT 3,4", or "CODE" after '"" ' in
+// LOAD "" CODE 100. The tokenise-side fix only ever removed a space
+// stored *after* a keyword token; it never looked at what came
+// *before* a match, which is exactly what a colon or a closing quote
+// followed by a space hits. Confirmed against the same real +3
+// fixture used before (loader.tok: zero bytes between the colon and
+// PAPER, zero bytes between the closing quote and CODE) before fixing
+// tokenise.go, and confirmed detokenise.go had its own, separate half
+// of the same bug: it only ever added a synthesised space *after* a
+// token, never before, so a keyword with nothing stored on its
+// leading side (like this fix produces) rendered with no gap at all
+// ("I=1TO 5") until detokenise.go's own leading-space case was added
+// too.
+func TestKeywordAfterColonOrQuote(t *testing.T) {
+	cases := []struct {
+		src  string
+		want string
+	}{
+		{"10 POKE 1,2: OUT 3,4", "10 POKE 1,2: OUT 3,4\n"},
+		{"10 LOAD \"\" CODE 100", "10 LOAD \"\" CODE 100\n"},
 	}
 	for _, c := range cases {
 		t.Run(c.src, func(t *testing.T) {

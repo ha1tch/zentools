@@ -134,6 +134,22 @@ func tokeniseLine(line string, cfg *config) ([]byte, int, error) {
 
 		// Try to match a keyword token at this position (longest first).
 		if tok, n, ok := matchToken(body[j:], cfg); ok {
+			// Symmetric to the trailing-space rule below: one space
+			// immediately preceding a keyword token is also never
+			// stored. Confirmed against the same real +3 fixture --
+			// loader.tok has zero bytes between the colon and PAPER,
+			// and zero bytes between the closing quote and CODE, even
+			// though a human typing "BORDER 0: PAPER 0" or
+			// LOAD "" CODE naturally leaves a space in both those
+			// spots. Missed on the first pass: only the after-token
+			// case was tested there, not the before-token case, which
+			// is what a mid-line keyword after a colon or a closing
+			// quote actually hits. Only the single most recently
+			// emitted space is removed; anything earlier is left
+			// alone.
+			if len(out) > 0 && out[len(out)-1] == ' ' {
+				out = out[:len(out)-1]
+			}
 			out = append(out, tok)
 			j += n
 			// REM: everything after the REM token is literal text.
