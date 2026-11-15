@@ -1,12 +1,16 @@
 // file: scr.go
 //
-// The `zx scr` subcommand converts ordinary images (PNG, JPEG, GIF) into ZX
-// Spectrum SCR screen files, and decodes SCR files back to PNG. Conversion
-// reduces the image to the Spectrum's per-cell two-colour attribute constraint.
+// The `zx scr` subcommand converts ordinary images (PNG, JPEG, GIF, BMP) into
+// ZX Spectrum screen files, decodes them back to PNG, and works with ZCUT
+// asset collections (cut.go). Conversion reduces the image to the Spectrum's
+// per-cell two-colour attribute constraint.
 //
 // An image that is not already 256x192 must be resized with --resize; without
 // it, conversion fails and lists the available modes. The padding colour for
 // the centre and bestfit modes is given as a CSS-like --fillattr.
+//
+// --mode and --palette select the ZXMODE screen modes and ZXPAL palettes
+// (scr_zx.go).
 
 package main
 
@@ -48,6 +52,18 @@ func cmdSCR(args []string) error {
 		return scrFromSnap(args[1:])
 	case "ocr":
 		return scrOCR(args[1:])
+	case "palette":
+		return scrPalette(args[1:])
+	case "flip":
+		return scrFlip(args[1:])
+	case "fit":
+		return scrFit(args[1:])
+	case "fitregs":
+		return scrFitRegs(args[1:])
+	case "convert":
+		return scrConvert(args[1:])
+	case "compare":
+		return scrCompare(args[1:])
 	case "-h", "--help", "help":
 		scrUsage()
 		return nil
@@ -58,58 +74,140 @@ func cmdSCR(args []string) error {
 }
 
 func scrUsage() {
-	fmt.Fprint(os.Stderr, `zx scr - convert images to/from ZX Spectrum SCR screens
+	fmt.Fprint(os.Stderr, `zx scr - Spectrum screens: classic .scr, ZXMODE .zm1/.zm2, and ZCUT asset collections
 
 Usage:
-  zx scr encode [flags] <image>        convert PNG/JPEG/GIF to .scr
-  zx scr decode [flags] <file.scr>     render an .scr back to PNG
-  zx scr crop   [flags] <image|.scr>   crop a region (or sprite) to PNG
-  zx scr ocr    [flags] <image|.scr>   recognise on-screen text as plain text
+  zx scr encode  [flags] <image>          convert PNG/JPEG/GIF/BMP to .scr (or .zm1, .zm2, .cut)
+  zx scr decode  [flags] <screen>         render a .scr, .zm1 or .zm2 back to PNG
+  zx scr fit     [flags] [-size WxH|zxmodeN] <image>   fit an image as encode would, to PNG
+  zx scr crop    [flags] <image|screen>   crop a region (or sprite) to PNG
+  zx scr ocr     [flags] <image|screen>   recognise on-screen text as plain text
+  zx scr cut     [flags] -o file.cut <screen>        cut a named region into a collection
+  zx scr paste   [flags] <file.cut:name> <screen>    paste an asset into a screen
+  zx scr ls      <file.cut>               list a collection's assets
+  zx scr atlas   [flags] <file.cut>       draw a collection's assets on one sheet
+  zx scr flip    -h|-v [flags] <screen|file.cut|image>   mirror a screen, assets or an image
+  zx scr convert -to <zxpalN> [flags] <file.cut|screen>  rewrite attributes for another palette
+  zx scr palette [-registers f] [-banks] [-o file.csv|file.png] <zxpalN>   list a palette's registers
+  zx scr fitregs -add <n> -o <file.csv> [flags] <picture>...   fit colours to add to a palette
+  zx scr compare [-metric m] <a> <b>      compare two images or screens
+  zx scr fromsnap [flags] <snapshot>      take the screen from a snapshot
+
+Screens: a .scr is ZXMODE0 (the classic layout), a .zm1 ZXMODE1 (linear 256x192) and a
+.zm2 ZXMODE2 (linear 512x384, two half-screen pages). The files do not record their
+palette, so every command that reads one takes:
+  -mode <m>          zxmode0, zxmode1 or zxmode2 (default: from the extension)
+  -palette <p>       zxpal0 to zxpal4 (default zxpal0; zxpal3 and zxpal4 need zxmode1/2)
+  -registers <csv>   the register colours the screen is meant for, when the program
+                     loads its own (default: the palette's reset values); the CSV is the
+                     one zx scr palette -o writes, or a spec data/zxpalN_registers.csv
 
 Encode flags:
-  -o <file>          output path (default: input base name + .scr)
-  -resize <mode>     how to fit a non-256x192 image:
+  -o <file>          output path (default: input base name + .scr, .zm1 or .zm2)
+  -resize <mode>     how to fit an image of another size:
                        stretch   scale to fill, ignoring aspect ratio
                        bestfit   scale to fit, preserving aspect, padded border
                        centre    no scaling; centre and crop/pad (alias: center)
+                       fill      scale to cover, preserving aspect, crop the
+                                 overflow (alias: cover)
+  -filter <f>        default (bilinear, or an area filter when fill shrinks) or
+                     lanczos (Pillow's; -resize fill -filter lanczos is the ZXMODE
+                     specification's picture fit, byte for byte)
+  -centering <x,y>   where fill crops, each 0 to 1 (default 0.5,0.5; 0 keeps the
+                     left or top edge, 1 the right or bottom)
+  -trim <n>          remove n pixels from every edge first (a scan margin)
+  -grey              convert to grey after fitting, as the specification does
+                     (ITU-R 601 luminance, Pillow's convert("L"))
   -fillattr <spec>   border colour for centre/bestfit, CSS-like:
                        "ink:white; paper:blue; bright:1; flash:0"
                        colours may be names (black, blue, red, magenta, green,
                        cyan, yellow, white) or palette indices 0-7;
-                       spaces around : and ; are allowed; braces optional;
                        only paper is visible in a border
+  -mode, -palette, -registers   as above; any of them selects the ZXMODE reference
+                     encoder (with none, encode works as it always has). An output
+                     ending in .cut appends the picture to a collection as one asset.
+  -name <n>          asset name for a .cut output (default: input base name)
+  Experimental encoder options (Part 4, section 5 of the specification; any of them
+  leaves the reference encoder):
+  -diffuse <f>       spread each cell's colour error into the cells after it, times f
+                     (0-1); the encoding then runs on one CPU
+  -flat <n>          fill cells whose pixels spread less than n with one colour
+  -linear-pairs      choose each cell's pair in linear light rather than sRGB
+  -penalty <p>       weight of the span term in each pair's score (default 0.204, the
+                     reference one; larger favours closer pairs); the output is still a screen
+  For trying palette designs (the output is a PNG, not a screen file):
+  -banks <csv>       encode over these colour banks instead of a palette: columns bank, r, g,
+                     b (or hex); each cell takes its two colours from one bank. zx scr palette
+                     -banks writes a palette's, zx scr fitregs a fitted one
+  -cell <WxH>        cell size (default 8x8; 4 means 4x4); 4x4 cells dither with the 4x4
+                     Bayer matrix, other sizes with the 8x8 one laid over the whole picture
+
+Fit flags: -resize, -filter, -centering, -trim, -grey and -fillattr, as for encode;
+  -size WxH or a mode (default 512x384); -o <file.png>.
 
 Decode flags:
   -o <file>          output PNG path (default: input base name + .png)
+  -mode, -palette, -registers   as above
+  -flash             draw ZXPAL0 flashing cells in their second phase
 
 Crop flags (exactly one of --cells / --pixels / --auto):
   -cells <x,y,w,h>   crop region in 8x8 character cells
   -pixels <x,y,w,h>  crop region in pixels (w, h need not be multiples of 8)
-  -auto              crop to the sprite extent: for a .scr, the bounding box of
+  -auto              crop to the sprite extent: for a screen, the bounding box of
                      set bitmap bits; for an image, the non-background box
   -o <file>          output PNG path (default: input base name + "-crop.png")
-
-  For .scr input (sprite extraction):
+  For a screen (sprite extraction):
   -bits <1|0>        which bitmap bits are the sprite (default 1; 0 = paper-on-ink)
   -with-attributes   render in the screen's own colours, opaque (default)
   -bitmap-only[=<css>]  render the shape only; paper is transparent unless the
                      attribute spec names a paper, e.g.
                      --bitmap-only="ink:cyan; paper:black"
-
   For image input, --auto only:
   -bg <colour>       background colour (name or index 0-7; default: inferred)
   -tol <n>           colour tolerance 0-255 (default 16)
 
-  Output is always PNG.
+Cut flags: -cells or -pixels (as crop), -name <n> (required), -o <file.cut>,
+  -bitmap-only, -mask. A cell-aligned region keeps its attributes, in the screen's
+  palette, with its register table when -registers was given.
 
-An image that is not 256x192 requires -resize; without it, encode fails.
+Paste flags: -at <x,y> (required), -op or|and|copy|xor (default or), -mask <name>,
+  -set-attr <css> (one-byte palettes), -o <file> (default: the target). An attributed
+  asset pasted at a cell-aligned position writes its attributes too, converted to the
+  target's palette and registers when they differ (see convert).
+
+Flip flags: -h (left to right), -v (top to bottom), -name <n> (one asset of a .cut;
+  default all), -o <file> (default: the input; an image is written as PNG).
+
+Convert flags: -to <zxpalN> (required), -to-registers <csv>, -to-mode <m> (a screen
+  may change between zxmode0 and zxmode1), -name <n>, -o <file>. The bitmap is kept;
+  each cell takes the target colours nearest its own ink and paper, weighted by how
+  many pixels each covers, within one bank for a one-byte palette.
+
+Fitregs flags (the specification's register search, tools/z4_palette_search.py):
+  -add <n>           colours to add (required)
+  -palette <p>       zxpal3 or zxpal4 to add to (default zxpal4), with -registers; or
+  -banks <csv>       a one-bank table to add to
+  -o <file.csv>      the base colours and the new ones, as one bank (for encode -banks)
+  -sample <n>        pixels drawn from each picture, after a blur of -blur (1.5) (20000)
+  -candidates <n>    candidate colours drawn from the sample (1500)
+  -subsample <n>     pixels the greedy choice is scored on (12000)
+  -iterations <n>    k-means passes that refine the new colours (25)
+  -seed <n>          seed of the random draws (1); a fit repeats exactly
+  The pictures are used as they are: fit them first (zx scr fit).
+
+Compare flags:
+  -metric <m>        pixels (default: count differing pixels, exit non-zero if any),
+                     blur (the specification's error: RMS after a Gaussian blur of
+                     1.5, as its tools compute it), light (blur 0.75), blur=<sigma>,
+                     rms (no blur), ssim (as scikit-image computes it) or all.
+                     A 256x192 image is doubled to compare with a 512x384 one.
 
 OCR flags:
   -origin <x,y>      pixel offset, within the image, of the display's
-                     top-left corner (default: 0,0; ignored for .scr input,
-                     which is always the native resolution with no border)
-  -scale <n>         pixels per emulated pixel (default: 1; ignored for
-                     .scr input). For a captured emulator window, this is
+                     top-left corner (default: 0,0; not for a screen file,
+                     which is always its native resolution with no border)
+  -scale <n>         pixels per emulated pixel (default: 1; not for a screen
+                     file). For a captured emulator window, this is
                      usually the window's own render scale -- e.g. CSpect's
                      -w3 renders at 3x, with a further 32-pixel (32*scale)
                      border on every side of the 256x192 display before any
@@ -117,19 +215,23 @@ OCR flags:
   -o <file>          output path for the recognised text (default: stdout)
 
   Recognition matches each 8x8 character cell against the real ZX Spectrum
-  ROM font (codes 32-127). Content outside that set -- box-drawing borders,
-  UDGs, decorative graphics -- is matched to its nearest visual
-  approximation rather than skipped, so garbage characters in a
-  non-textual region of the screen are expected, not a bug.
+  ROM font (codes 32-127). A classic .scr is read by colour; a .zm1 or .zm2
+  (or a .scr with -palette) is read from its bitmap, 48 lines of 64 characters
+  in ZXMODE2. Content outside that set -- box-drawing borders, UDGs,
+  decorative graphics -- is matched to its nearest visual approximation
+  rather than skipped, so garbage characters in a non-textual region of the
+  screen are expected, not a bug.
 `)
 }
 
 func scrEncode(args []string) error {
 	fs := flag.NewFlagSet("scr encode", flag.ContinueOnError)
 	out := fs.String("o", "", "output .scr path")
-	resize := fs.String("resize", "", "resize mode: stretch | bestfit | centre")
-	fillattr := fs.String("fillattr", "", "border attribute (CSS-like)")
-	args = permuteArgs(args, map[string]bool{})
+	var ff fitFlags
+	ff.register(fs)
+	var z zxEncodeFlags
+	z.register(fs)
+	args = permuteArgs(args, map[string]bool{"grey": true, "linear-pairs": true})
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -138,41 +240,13 @@ func scrEncode(args []string) error {
 		return fmt.Errorf("encode needs exactly one input image")
 	}
 	inPath := fs.Arg(0)
-
-	mode, err := parseResizeMode(*resize)
+	if z.used() {
+		return scrEncodeZX(inPath, &ff, &z, *out)
+	}
+	fitted, err := ff.fit(inPath, scr.Width, scr.Height)
 	if err != nil {
 		return err
 	}
-
-	fill, err := scr.ParseAttribute(*fillattr)
-	if err != nil {
-		return err
-	}
-
-	f, err := os.Open(inPath)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	img, err := scr.DecodeImage(f)
-	if err != nil {
-		return fmt.Errorf("decoding %s: %w", inPath, err)
-	}
-
-	fitted, err := scr.Fit(img, mode, fill.PaperRGBA())
-	if err != nil {
-		// Turn a size mismatch with no chosen mode into actionable guidance.
-		if _, ok := err.(*scr.SizeError); ok && mode == scr.ResizeNone {
-			return fmt.Errorf("%s is %dx%d, not %dx%d; choose a resize mode:\n"+
-				"  --resize=stretch   scale to fill, ignoring aspect ratio\n"+
-				"  --resize=bestfit   scale to fit, preserving aspect, padded border\n"+
-				"  --resize=centre    no scaling; centre and crop/pad",
-				inPath, img.Bounds().Dx(), img.Bounds().Dy(), scr.Width, scr.Height)
-		}
-		return err
-	}
-
 	screen, err := scr.FromImage(fitted)
 	if err != nil {
 		return err
@@ -193,7 +267,10 @@ func scrEncode(args []string) error {
 func scrDecode(args []string) error {
 	fs := flag.NewFlagSet("scr decode", flag.ContinueOnError)
 	out := fs.String("o", "", "output PNG path")
-	args = permuteArgs(args, map[string]bool{})
+	var pf picFlags
+	pf.register(fs, "the screen")
+	flash := fs.Bool("flash", false, "render ZXPAL0 flashing cells in their second phase")
+	args = permuteArgs(args, map[string]bool{"flash": true})
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -202,6 +279,9 @@ func scrDecode(args []string) error {
 		return fmt.Errorf("decode needs exactly one .scr file")
 	}
 	inPath := fs.Arg(0)
+	if ext := strings.ToLower(filepath.Ext(inPath)); pf.mode != "" || pf.palette != "" || pf.registers != "" || *flash || ext == ".zm1" || ext == ".zm2" {
+		return scrDecodeZX(inPath, pf, *out, *flash)
+	}
 
 	data, err := os.ReadFile(inPath)
 	if err != nil {
@@ -239,6 +319,8 @@ func scrCrop(args []string) error {
 	bitmapOnly := fs.String("bitmap-only", scrFlagUnset, "render the shape only; optional attribute spec for ink/paper colours")
 	fs.Bool("with-attributes", false, "render in the screen's colours (default)")
 	out := fs.String("o", "", "output PNG path")
+	var pf picFlags
+	pf.register(fs, "a screen")
 	args = permuteArgs(args, map[string]bool{"auto": true, "with-attributes": true, "bitmap-only": true})
 	// --bitmap-only is value-optional. Go's flag package would otherwise consume
 	// the following token as its value, so rewrite a bare "--bitmap-only" (with no
@@ -278,12 +360,13 @@ func scrCrop(args []string) error {
 		return fmt.Errorf("crop: --with-attributes and --bitmap-only are mutually exclusive")
 	}
 
-	// Load the source. A 6912-byte file is an SCR; otherwise decode as an image.
+	// Load the source. A .zm1 or .zm2 file, or a 6912-byte file, is a screen;
+	// otherwise decode as an image.
 	raw, err := os.ReadFile(inPath)
 	if err != nil {
 		return err
 	}
-	isSCRInput := len(raw) == scr.FileLen
+	isSCRInput := len(raw) == scr.FileLen || isScreenFile(inPath)
 
 	// Flags that only make sense for .scr input.
 	if !isSCRInput {
@@ -303,9 +386,9 @@ func scrCrop(args []string) error {
 
 	// Produce the full-frame source image to crop from.
 	var srcImg image.Image
-	var screen *scr.Screen
+	var pic *scr.Picture
 	if isSCRInput {
-		screen, err = scr.Decode(raw)
+		pic, err = loadPicture(inPath, pf)
 		if err != nil {
 			return err
 		}
@@ -314,9 +397,9 @@ func scrCrop(args []string) error {
 			if err != nil {
 				return err
 			}
-			srcImg = scr.ToImageBitmap(screen, *bits, ink, paper, paperTransparent)
+			srcImg = pic.BitmapImage(*bits, ink, paper, paperTransparent)
 		} else {
-			srcImg = scr.ToImage(screen)
+			srcImg = pic.Render(false)
 		}
 	} else {
 		img, _, derr := image.Decode(strings.NewReader(string(raw)))
@@ -344,7 +427,7 @@ func scrCrop(args []string) error {
 	case *auto:
 		if isSCRInput {
 			// Bitmap-aware: the sprite's extent is its set bits, not its colours.
-			region, err = scr.BitmapExtent(screen, *bits)
+			region, err = scr.PictureExtent(pic, *bits)
 			if err != nil {
 				return fmt.Errorf("crop --auto: %w", err)
 			}
@@ -484,8 +567,10 @@ func parseResizeMode(s string) (scr.ResizeMode, error) {
 		return scr.ResizeBestFit, nil
 	case "centre", "center":
 		return scr.ResizeCentre, nil
+	case "fill", "cover":
+		return scr.ResizeFill, nil
 	default:
-		return scr.ResizeNone, fmt.Errorf("unknown resize mode %q (want stretch, bestfit, or centre)", s)
+		return scr.ResizeNone, fmt.Errorf("unknown resize mode %q (want stretch, bestfit, centre or fill)", s)
 	}
 }
 
@@ -494,6 +579,8 @@ func scrOCR(args []string) error {
 	origin := fs.String("origin", "", "pixel offset x,y of the display's top-left corner (default 0,0)")
 	scale := fs.Int("scale", 1, "pixels per emulated pixel")
 	out := fs.String("o", "", "output path for recognised text (default: stdout)")
+	var pf picFlags
+	pf.register(fs, "a screen")
 	args = permuteArgs(args, map[string]bool{})
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -510,18 +597,27 @@ func scrOCR(args []string) error {
 	}
 
 	var lines []string
-	if len(raw) == scr.FileLen {
-		// A .scr file is always exactly the native 256x192 pixels, so no
+	if len(raw) == scr.FileLen || isScreenFile(inPath) {
+		// A screen file is always exactly its native pixels, so no
 		// geometry flags apply -- flag them as a mistake rather than
 		// silently ignoring what the user asked for.
 		if *origin != "" || *scale != 1 {
-			return fmt.Errorf("ocr: --origin and --scale do not apply to .scr input (already native resolution)")
+			return fmt.Errorf("ocr: --origin and --scale do not apply to a screen file (already native resolution)")
 		}
-		screen, derr := scr.Decode(raw)
+		pic, derr := loadPicture(inPath, pf)
 		if derr != nil {
 			return derr
 		}
-		lines, err = scr.RecognizeScreen(screen)
+		if pic.Mode == scr.ZXMODE0 && pic.Palette == scr.ZXPAL0 && pic.Registers == nil {
+			// A classic screen reads by colour, as it always has.
+			s, derr := scr.Decode(raw)
+			if derr != nil {
+				return derr
+			}
+			lines, err = scr.RecognizeScreen(s)
+		} else {
+			lines, err = scr.RecognizePicture(pic)
+		}
 	} else {
 		img, _, derr := image.Decode(strings.NewReader(string(raw)))
 		if derr != nil {

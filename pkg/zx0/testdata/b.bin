@@ -1,0 +1,123 @@
+# zentools
+
+[![test](https://github.com/ha1tch/zentools/actions/workflows/test.yml/badge.svg)](https://github.com/ha1tch/zentools/actions/workflows/test.yml)
+[![cross-build](https://github.com/ha1tch/zentools/actions/workflows/cross-build.yml/badge.svg)](https://github.com/ha1tch/zentools/actions/workflows/cross-build.yml)
+
+A Go library and command-line toolkit for converting and manipulating ZX
+Spectrum file formats: TAP, TZX, PZX, snapshots (`.sna`, `.z80`, `.szx`),
+RZX input recordings, BASIC, and `.scr` screens. No third-party
+dependencies.
+
+- **[CLI tools manual](docs/CLI.md)** — every command and flag, with the
+  conversion table and what each conversion costs.
+- **[Tape handling manual](docs/TAPE-HANDLING.md)** — building, combining,
+  and editing multi-block tapes, with a full worked tutorial.
+- **[Sprite handling manual](docs/SPRITE-HANDLING.md)** — screens, tiles,
+  and sprite collections, with a tutorial using real ZX Spectrum artwork.
+- **[Library manual](docs/LIBRARY.md)** — packages, types, and examples.
+
+Beyond tape and snapshot conversion, `zx scr` covers the whole screen and
+sprite side: `encode`/`decode` convert between ordinary images and the
+native 6912-byte `.scr` format, `crop` pulls out a region as PNG, and
+`fromsnap` extracts a display straight out of a snapshot. `cut`, `paste`,
+`ls`, and `atlas` manage `.cut` files — named collections of extracted
+sprites and tiles, pulled from one or more screens, meant for reuse
+across a project. `ocr` recognises the text on a screen against the real
+Spectrum ROM font and prints it as plain text, for driving emulators
+through captured screenshots without a human reading each one by eye.
+
+## Tools
+
+`maketap`, `totap`, `loadtap`, and `tap2tzx` are legacy,
+[zxgotools](https://github.com/ha1tch/zxgotools)-compatible drop-in
+replacements (same interfaces, corrected behaviour, no external
+dependencies) kept for existing scripts; new work should use `zx` below.
+Full flag reference for all four is in the [CLI tools manual](docs/CLI.md).
+
+`zx` is the unified command, organised by format:
+
+| Command      | Does                                                       |
+| ------------ | ---------------------------------------------------------- |
+| `zx tap`     | make, inspect, or append TAP images                        |
+| `zx tzx`     | make and inspect TZX images                                |
+| `zx pzx`     | make (from a TAP) and inspect PZX images                   |
+| `zx basic`   | tokenise and detokenise ZX BASIC                           |
+| `zx scr`     | convert, crop, and manage `.scr` screens and sprite/asset collections; ZXMODE pictures and ZXPAL palettes; recognise on-screen text |
+| `zx next`    | ZX Spectrum Next palettes (`.nxp`) and sprite patterns (`.spr`): make them from images, draw them, inspect them |
+| `zx snap`    | build a runnable snapshot (`.sna`/`.z80`/`.szx`) from a binary, or inspect one |
+| `zx rzx`     | inspect RZX input-recording files                          |
+| `zx convert` | convert between tape/snapshot formats, and extract a flat `.bin` payload from either |
+| `zx edit`    | list, extract, delete, import, or append blocks/tapes in a multi-block tape (`.tap`/`.tzx`/`.pzx`) |
+| `zx build`   | build a multi-block tape file from a JSON specification    |
+| `zx info`    | identify and summarise a file                              |
+
+### Usage: the legacy tools
+
+```
+# binary to TAP, named, loading at 0x8000
+maketap --name game --address 32768 game.bin game.tap
+
+# binary to TAP (CODE block)
+totap --binary --name game --address 32768 game.bin game.tap
+
+# BASIC text to an auto-running TAP
+totap --basic --name loader --autostart 10 loader.bas loader.tap
+
+# list a tape's blocks; -d adds a hex dump
+loadtap game.tap
+loadtap -d game.tap
+
+# extract a tape's raw data, skipping headers
+loadtap -r game.tap > game.payload
+
+# one TAP to TZX with metadata
+tap2tzx -o game.tzx -m --title "My Game" --author "haitch" --year 2026 game.tap
+
+# several TAPs to one 128K multiload TZX, grouped
+tap2tzx -o game.tzx -128 --multiload --group "Game" part1.tap part2.tap part3.tap
+```
+
+### Usage: zx
+
+```
+# make a TAP from a binary, with a BASIC auto-run loader
+zx tap make game.bin --origin 0x8000 --loader --start 0x8000 -o game.tap
+
+# inspect a tape
+zx tap info game.tap
+
+# combine several TAP files into one -- raw byte concatenation is valid
+# for pure TAP (no container structure of its own); for mixed formats
+# (or TZX/PZX inputs), use zx edit append instead
+zx tap append loader.tap main.tap level1.tap -o game.tap
+
+# wrap a TAP as TZX with archive metadata
+zx tzx make game.tap --title "My Game" --author "haitch" --year 2026 -o game.tzx
+
+# tokenise BASIC source, then read it back
+zx basic tokenise loader.bas -o loader.bin
+zx basic detokenise loader.bin
+
+# build a runnable snapshot from a binary, in any of three formats
+zx snap make game.bin --start 0x8000 --model 48k --sna --z80 --szx -o game
+zx snap info game.z80
+
+# wrap a TAP as PZX, using the standard Spectrum ROM pilot/sync/bit timings
+zx pzx make game.tap --title "My Game" -o game.pzx
+zx pzx info game.pzx
+
+# inspect an RZX input-recording file (frame counts, embedded snapshots)
+zx rzx info session.rzx
+
+# convert between formats (extensions decide source and target)
+zx convert game.tap -o game.tzx              # lossless
+zx convert game.sna -o game.z80              # lossless
+zx convert game.tap -o game.z80 --start 0x8000   # tape to snapshot needs --start
+zx convert game.pzx -o game.tap              # only PULS+DATA pairs using standard
+                                              # ROM timing convert; anything else is dropped
+
+# extract a flat binary -- no headers, no registers, just bytes
+zx convert game.tap -o code.bin                          # first Code-type block
+zx convert game.tap -o code.bin --block-name MAIN         # a specific block, by name
+zx convert game.z80 -o code.bin                          # from the snapshot's own PC
+zx convert game.z80 -o code.b

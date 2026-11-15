@@ -77,6 +77,10 @@ func paletteColor(index uint8, bright bool) color.RGBA {
 	return color.RGBA{R: r(red), G: r(green), B: r(blue), A: 0xFF}
 }
 
+// ULAColor is the colour of a Spectrum palette index (0..7) at a brightness,
+// as this package draws it.
+func ULAColor(index uint8, bright bool) color.RGBA { return paletteColor(index&7, bright) }
+
 // Attribute is one attribute cell: an ink and paper colour (each 0..7), a
 // bright flag, and a flash flag. It maps to a single byte as
 // ink | paper<<3 | bright<<6 | flash<<7.

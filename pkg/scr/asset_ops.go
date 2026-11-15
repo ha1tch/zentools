@@ -70,9 +70,18 @@ const (
 // asset's bitmap with the target according to op. If the asset carries
 // attributes and (x, y) is cell-aligned, the attributes are written too;
 // otherwise attributes are skipped. The asset must fit within the screen.
+// A classic screen is in ZXPAL0, so an asset in another palette or register
+// set has its attributes converted first (ConvertAsset).
 func Paste(s *Screen, a *Asset, x, y int, op PasteOp) error {
 	if x < 0 || y < 0 || x+a.Width > Width || y+a.Height > Height {
 		return fmt.Errorf("paste: asset %dx%d at %d,%d does not fit screen", a.Width, a.Height, x, y)
+	}
+	if a.HasAttrs() && !a.Matches(ZXPAL0, nil) {
+		c, err := ConvertAsset(a, ZXPAL0, nil)
+		if err != nil {
+			return err
+		}
+		a = c
 	}
 	for ay := 0; ay < a.Height; ay++ {
 		for ax := 0; ax < a.Width; ax++ {
@@ -126,7 +135,8 @@ func ApplyMask(a, mask *Asset) error {
 }
 
 // MapAttributes applies f to every attribute cell of an asset, leaving the
-// bitmap untouched. It is a no-op on a bitmap-only asset.
+// bitmap untouched. It is a no-op on a bitmap-only asset and on an asset in a
+// two-byte palette, whose cells are register numbers rather than attributes.
 func (a *Asset) MapAttributes(f func(Attribute) Attribute) {
 	if !a.HasAttrs() {
 		return

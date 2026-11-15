@@ -1,0 +1,9 @@
+	INCLUDE "common.i"
+	FILLBANK 5
+	FILLBANK 3
+	ORG $8000
+start:	jr start
+	SAVENEX OPEN "tile.nex", start
+	SAVENEX SCREEN TILE $A1, $00, $6C, $0C
+	SAVENEX BANK 3
+	SAVENEX CLOSE

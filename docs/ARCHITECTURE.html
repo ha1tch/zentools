@@ -10,16 +10,18 @@
 <div class="zsp-border">
 <div class="zsp-page">
 <div class="zsp-nav">
-<a href="CLI.html">CLI manual</a><a href="TAPE-HANDLING.html">Tape handling</a><a href="SPRITE-HANDLING.html">Sprite handling</a><a href="LIBRARY.html">Library</a><a href="ARCHITECTURE.html">Architecture</a>
+<a href="CLI.html">CLI manual</a><a href="TAPE-HANDLING.html">Tape handling</a><a href="SPRITE-HANDLING.html">Sprite handling</a><a href="ZXMODE-HANDLING.html">ZXMODE handling</a><a href="NEXT-HANDLING.html">Next handling</a><a href="LIBRARY.html">Library</a><a href="ARCHITECTURE.html">Architecture</a>
 
 </div>
 <div class="zsp-kicker">zentools manual</div>
 <h1 id="zentools--architecture">zentools — architecture</h1>
 <p>zentools is the canonical Go library for ZX Spectrum binary formats:
-tape images, snapshots, disk images, and BASIC tokenisation. It exists
-so that the tools in the ecosystem (zenas, zenzx, plus3, zendis, and
-future ones) share one verified implementation of each format instead of
-maintaining several partial, "sometimes badly" copies.</p>
+tape images, snapshots, BASIC tokenisation, screens and graphics
+(classic, ZXMODE and Spectrum Next), and NEX files. Disk images stay
+with plus3 (see Format ownership). It exists so that the tools in the
+ecosystem (zenas, zenzx, plus3, zendis, and future ones) share one
+verified implementation of each format instead of maintaining several
+partial, "sometimes badly" copies.</p>
 <p>This document defines the package layout, the public API shape, and
 the rules that keep the library reusable. It is the contract the
 migration builds to.</p>
@@ -56,23 +58,27 @@ self-consistency. Correctness is the product.</p></li>
 │   ├── tap/         TAP tape images. Encode/decode CODE and Program blocks.
 │   ├── tzx/         TZX tape images. Encode (and decode) the common block set.
 │   ├── pzx/         PZX tape images, the simpler TZX successor.
-│   ├── snapshot/    .zxs / .sna / .z80 via a neutral MachineState.
+│   ├── snapshot/    .sna / .z80 via a neutral MachineState.
 │   │   ├── state.go     MachineState and its sub-structs (the pivot type)
-│   │   ├── zxs.go       chunked ZenZX format
 │   │   ├── sna.go       48K / 128K .sna
 │   │   └── z80.go       .z80 (versioned, compressed)
 │   ├── szx/         .szx (zx-state) via the same neutral MachineState.
 │   ├── rzx/         .rzx input-recording files (embeds a snapshot block).
 │   ├── basic/       BASIC tokenise + detokenise (48K and 128K keywords).
-│   ├── scr/         .scr screens, image conversion, .cut asset collections.
+│   ├── scr/         .scr screens, image conversion (PNG, BMP, GIF, JPEG), .cut
+│   │                asset collections, ZXMODE pictures and ZXPAL palettes.
+│   ├── zxn/         ZX Spectrum Next graphics: palettes, sprites and attributes,
+│   │                Layer 2, LoRes and Timex screens, tiles, colour reduction.
+│   ├── nex/         NEX files, the Spectrum Next executable format.
+│   ├── zx0/         ZX0 compression (a port of the reference compressor).
 │   ├── bdf/         BDF bitmap font reader, used internally by scr&#39;s OCR.
 │   ├── build/       overlay machine code onto a boot state; emit tapes/snapshots.
 │   └── version/     library version constant.
 ├── cmd/             CLI tools over the packages.
 │   ├── maketap, totap, loadtap, tap2tzx   drop-in zxgotools replacements.
-│   └── zx/          modern unified front-end (tap, tzx, pzx, basic, scr, snap,
-│                    rzx, convert, edit, build, info). Third-party deps (flags)
-│                    live here, not in pkg/.
+│   └── zx/          modern unified front-end (tap, tzx, pzx, basic, scr, next, zx0,
+│                    snap, rzx, convert, edit, build, info). Flag parsing lives
+│                    here, not in pkg/; zentools has no third-party dependencies.
 └── (hygiene: VERSION, Makefile, .repoman.json, release.sh, syncver.sh,
     CHANGELOG.md, .gitignore, LICENSE)</code></pre>
 <h2 id="format-ownership">Format ownership</h2>
@@ -94,9 +100,26 @@ project's identity stay native to that project:</p>
 <td>interchange tape formats every tool reads</td>
 </tr>
 <tr class="even">
-<td><code>.sna</code>, <code>.z80</code></td>
+<td><code>.sna</code>, <code>.z80</code>, <code>.szx</code>,
+<code>.rzx</code></td>
 <td>zentools</td>
-<td>portable snapshot standards</td>
+<td>portable snapshot and recording standards</td>
+</tr>
+<tr class="odd">
+<td><code>.scr</code>, <code>.zm1</code>, <code>.zm2</code>,
+<code>.cut</code></td>
+<td>zentools</td>
+<td>Spectrum screens, ZXMODE pictures and asset collections, shared by
+the graphics tools</td>
+</tr>
+<tr class="even">
+<td><code>.nxp</code>, <code>.spr</code>, <code>.nxi</code>,
+<code>.nxt</code>, <code>.nxm</code>, <code>.nxb</code>,
+<code>.nex</code> (Spectrum Next)</td>
+<td>zentools</td>
+<td>the Next's interchange graphics and program formats, written by the
+community tools (gfx2next, nextbmp, sjasmplus); zentools absorbed zenpal
+for them</td>
 </tr>
 <tr class="odd">
 <td>BASIC tokenisation</td>
@@ -123,22 +146,27 @@ its <code>.sna</code>/<code>.z80</code> for zentools; plus3 keeps
 <code>zentools/pkg/tap</code>. No project loses its signature format;
 all share the interchange ones.</p>
 <h2 id="package-coupling">Package coupling</h2>
-<p>Packages do not import each other except that <code>cmd/</code>
-imports <code>pkg/*</code>. A format package importing another format
-package would couple them; keep them flat. (The one defensible
-exception, if it arises: a future <code>pkg/spectrum</code> holding
-shared constants like the XOR checksum or memory-map addresses. Not
-needed yet — TAP and TZX each own their small bit of shared knowledge
-until duplication actually hurts.)</p>
+<p>A format package imports another only to share a model, never for
+convenience: <code>szx</code> and <code>build</code> use
+<code>snapshot</code>'s machine state, <code>build</code> composes
+<code>tap</code>, <code>tzx</code> and <code>basic</code>,
+<code>scr</code>'s OCR uses <code>bdf</code>, and <code>zxn</code> takes
+the Spectrum ULA colours from <code>scr</code> so they are defined once.
+<code>cmd/</code> imports <code>pkg/*</code>. Otherwise keep the
+packages flat. (The one defensible exception, if it arises: a future
+<code>pkg/spectrum</code> holding shared constants like the XOR checksum
+or memory-map addresses. Not needed yet — TAP and TZX each own their
+small bit of shared knowledge until duplication actually hurts.)</p>
 <h2 id="public-api-shape-per-package">Public API shape (per
 package)</h2>
 <p>The naming is uniform so a consumer learns one pattern. Each format
 provides an in-memory core plus optional file/stream helpers.</p>
-<h3 id="pkgtap-built-verified">pkg/tap (built, verified)</h3>
+<h3 id="pkgtap">pkg/tap</h3>
 <div class="sourceCode" id="cb2"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> EncodeCode<span class="op">(</span>name <span class="dt">string</span><span class="op">,</span> data <span class="op">[]</span><span class="dt">byte</span><span class="op">,</span> loadAddress <span class="dt">uint16</span><span class="op">)</span> <span class="op">[]</span><span class="dt">byte</span></span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> EncodeProgram<span class="op">(</span>name <span class="dt">string</span><span class="op">,</span> data <span class="op">[]</span><span class="dt">byte</span><span class="op">,</span> autostart <span class="dt">uint16</span><span class="op">)</span> <span class="op">[]</span><span class="dt">byte</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> Decode<span class="op">(</span>image <span class="op">[]</span><span class="dt">byte</span><span class="op">)</span> <span class="op">([]</span>Block<span class="op">,</span> <span class="dt">error</span><span class="op">)</span>   <span class="co">// to add: parse a TAP into blocks</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> WriteCodeFile<span class="op">(</span>inputPath<span class="op">,</span> outputPath<span class="op">,</span> name <span class="dt">string</span><span class="op">,</span> loadAddress <span class="dt">uint16</span><span class="op">)</span> <span class="dt">error</span></span></code></pre></div>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> Decode<span class="op">(</span>image <span class="op">[]</span><span class="dt">byte</span><span class="op">)</span> <span class="op">([]</span>Block<span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> DecodeBlock<span class="op">(</span>raw <span class="op">[]</span><span class="dt">byte</span><span class="op">)</span> <span class="op">(</span>Block<span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> WriteCodeFile<span class="op">(</span>inputPath<span class="op">,</span> outputPath<span class="op">,</span> name <span class="dt">string</span><span class="op">,</span> loadAddress <span class="dt">uint16</span><span class="op">)</span> <span class="dt">error</span></span></code></pre></div>
 <p><code>Decode</code> returns typed blocks (header/data, with the
 header fields parsed) so a consumer like zenzx replaces its in-tree
 <code>loadTAP</code> with <code>tap.Decode</code> and then does its
@@ -161,12 +189,13 @@ stays in <code>cmd/tap2tzx</code>.</p>
 <span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Audio/FDC optional, format-permitting.</span></span>
 <span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
 <span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> EncodeZXS<span class="op">(</span>s <span class="op">*</span>MachineState<span class="op">)</span> <span class="op">([]</span><span class="dt">byte</span><span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span>
-<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> DecodeZXS<span class="op">(</span>image <span class="op">[]</span><span class="dt">byte</span><span class="op">)</span> <span class="op">(*</span>MachineState<span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span>
-<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> EncodeSNA<span class="op">(</span>s <span class="op">*</span>MachineState<span class="op">)</span> <span class="op">([]</span><span class="dt">byte</span><span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span>
-<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> DecodeSNA<span class="op">(</span>image <span class="op">[]</span><span class="dt">byte</span><span class="op">)</span> <span class="op">(*</span>MachineState<span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> EncodeSNA<span class="op">(</span>s <span class="op">*</span>MachineState<span class="op">)</span> <span class="op">([]</span><span class="dt">byte</span><span class="op">,</span> <span class="dt">error</span><span class="op">)</span>    <span class="co">// 48K</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> DecodeSNA<span class="op">(</span>image <span class="op">[]</span><span class="dt">byte</span><span class="op">)</span> <span class="op">(*</span>MachineState<span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> EncodeSNA128<span class="op">(</span>s <span class="op">*</span>MachineState<span class="op">)</span> <span class="op">([]</span><span class="dt">byte</span><span class="op">,</span> <span class="dt">error</span><span class="op">)</span> <span class="co">// 128K</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> DecodeSNA128<span class="op">(</span>image <span class="op">[]</span><span class="dt">byte</span><span class="op">)</span> <span class="op">(*</span>MachineState<span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span>
 <span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> EncodeZ80<span class="op">(</span>s <span class="op">*</span>MachineState<span class="op">)</span> <span class="op">([]</span><span class="dt">byte</span><span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span>
-<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> DecodeZ80<span class="op">(</span>image <span class="op">[]</span><span class="dt">byte</span><span class="op">)</span> <span class="op">(*</span>MachineState<span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span></code></pre></div>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> EncodeZ80v3<span class="op">(</span>s <span class="op">*</span>MachineState<span class="op">)</span> <span class="op">([]</span><span class="dt">byte</span><span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a><span class="kw">func</span> DecodeZ80<span class="op">(</span>image <span class="op">[]</span><span class="dt">byte</span><span class="op">)</span> <span class="op">(*</span>MachineState<span class="op">,</span> <span class="dt">error</span><span class="op">)</span> <span class="co">// versions 1 to 3</span></span></code></pre></div>
 <p>zenzx keeps a small adapter:
 <code>func (zx *ZenZX) toMachineState() *MachineState</code> and
 <code>func (zx *ZenZX) fromMachineState(s *MachineState)</code>. Its
@@ -181,6 +210,9 @@ Options carry case-independence and the like (borrowed from zxgotools'
 parser).</p>
 <h2 id="source-provenance-and-per-package-plan">Source provenance and
 per-package plan</h2>
+<p>This was the plan when zentools began. The packages it lists are
+built; the <a href="LIBRARY.html">library manual</a> describes them as
+they are.</p>
 <table>
 <thead>
 <tr class="header">

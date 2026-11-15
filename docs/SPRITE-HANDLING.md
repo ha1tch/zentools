@@ -9,7 +9,8 @@ wouldn't surface.
 
 If you're looking for tape or snapshot handling, see the
 [tape handling manual](TAPE-HANDLING.md) or the [CLI manual](CLI.md)
-instead. This document is screens and sprites only.
+instead. This document is screens and sprites only; the ZXMODE screen
+modes and ZXPAL palettes have their own [ZXMODE handling manual](ZXMODE-HANDLING.md).
 
 ## Contents
 

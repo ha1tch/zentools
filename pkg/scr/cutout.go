@@ -12,11 +12,31 @@
 // (1 bit per pixel, one attribute byte per 8x8 cell) are preserved; only the
 // ordering is linearised.
 //
+// Version 2 adds the ZXMODE palettes: each asset records its ZXPAL palette, and
+// an asset in a two-byte palette (ZXPAL3, ZXPAL4) stores two attribute planes,
+// ink registers then paper registers, as the ZXMODE linear modes lay them out.
+// A collection whose assets are all ZXPAL0 is written as version 1, byte for
+// byte as before; version 1 files read as ZXPAL0.
+//
+// Version 3 adds register tables: an asset meant for registers other than its
+// palette's reset values (Part 5 makes them loadable) carries its own table of
+// register colours, so it renders and converts as it was drawn. A collection
+// is written as version 3 only when some asset has a table.
+//
+// Every attributed asset therefore says how to read its attributes: the
+// palette names the attribute format (ZXPAL0 FBPPPIII with flash, ZXPAL1 and
+// ZXPAL2 RRPPPIII with a bank, ZXPAL3 and ZXPAL4 one register byte each for
+// ink and paper, stored as two planes as ZXMODE lays them out, arrangement A
+// of Part 2), and the register table, or its absence, says which colours the
+// register numbers stand for. ConvertAsset rewrites an asset for another
+// palette or register set.
+//
 // Layout (all multi-byte fields little-endian):
 //
 //	file preamble (8 bytes)
 //	  +0  "ZCUT"      magic
-//	  +4  version u8  = 1
+//	  +4  version u8  = 1; 2 when any asset is not ZXPAL0; 3 when any
+//	                  asset carries a register table
 //	  +5  flags   u8  reserved (must be 0)
 //	  +6  reserved u8 (must be 0)
 //	  +7  numAssets u8
@@ -29,26 +49,40 @@
 //	  payload (chunkLen bytes; payloadLen meaningful, remainder zero pad)
 //	    +0  widthPx  u16
 //	    +2  heightPx u16
-//	    +4  flags    u8   bit0 = has attributes, bit1 = is mask
-//	    +5  reserved [2]  (must be 0)
+//	    +4  flags    u8   bit0 = has attributes, bit1 = is mask,
+//	                      bit2 = two attribute bytes per cell (version 2),
+//	                      bit3 = register table follows (version 3)
+//	    +5  palette  u8   version 2: ZXPAL palette 0-4; version 1: reserved, 0
+//	    +6  reserved u8   (must be 0)
 //	    +7  nameLen  u8
 //	    +8  name     [roundUp8(nameLen)]  ASCII, zero-padded
 //	    ..  bitmap   [ceil(w/8)*h]        linear, row-major
-//	    ..  attrs    [cellsW*cellsH]      only if flags bit0
+//	    ..  attrs    [cellsW*cellsH]      only if flags bit0; the ink plane
+//	                                      when flags bit2
+//	    ..  paper    [cellsW*cellsH]      only if flags bit2
+//	    ..  registers [3*(last+1)]        only if flags bit3: R, G, B of each
+//	                                      of the palette's registers in order
 package scr
 
 import (
 	"encoding/binary"
 	"fmt"
+	"image/color"
 )
 
 const (
 	zcutMagic   = "ZCUT"
 	imagTag     = "IMAG"
 	zcutVersion = 1
+	// zcutVersion2 adds per-asset palettes and two-byte attributes.
+	zcutVersion2 = 2
+	// zcutVersion3 adds per-asset register tables.
+	zcutVersion3 = 3
 
-	assetFlagHasAttrs = 0x01
-	assetFlagIsMask   = 0x02
+	assetFlagHasAttrs  = 0x01
+	assetFlagIsMask    = 0x02
+	assetFlagTwoByte   = 0x04
+	assetFlagRegisters = 0x08
 
 	filePreambleLen = 8
 	chunkHeaderLen  = 16
@@ -68,12 +102,23 @@ type Asset struct {
 	// Ink is row-major [y][x], length Height x Width; true = set bit.
 	Ink [][]bool
 	// Attr is the per-cell grid [cellY][cellX]; nil if the asset has no
-	// attributes (bitmap-only or mask).
+	// attributes (bitmap-only or mask), or if its palette is a two-byte one.
+	// In ZXPAL1 and ZXPAL2 the attribute byte is stored unchanged, with bits
+	// 7-6 (Flash and Bright) read as the bank.
 	Attr [][]Attribute
+	// Palette is the ZXPAL palette the attributes are written for (ZXPAL0
+	// for every version 1 asset).
+	Palette Palette
+	// Attr2 is the per-cell grid for a two-byte palette (ZXPAL3, ZXPAL4): A
+	// is the ink register, B the paper register. Nil otherwise.
+	Attr2 [][]CellAttr
+	// Registers are the register colours the attributes are meant for; nil
+	// means the palette's reset values (version 3).
+	Registers Registers
 }
 
 // HasAttrs reports whether the asset carries attributes.
-func (a *Asset) HasAttrs() bool { return a.Attr != nil }
+func (a *Asset) HasAttrs() bool { return a.Attr != nil || a.Attr2 != nil }
 
 // Collection is an ordered set of named assets.
 type Collection struct {
@@ -114,17 +159,45 @@ func (a *Asset) validate() error {
 	if a.IsMask && a.HasAttrs() {
 		return fmt.Errorf("asset %q: a mask cannot carry attributes", a.Name)
 	}
+	if !a.Palette.Valid() {
+		return fmt.Errorf("asset %q: unknown palette %d", a.Name, a.Palette)
+	}
+	if a.Attr != nil && a.Attr2 != nil {
+		return fmt.Errorf("asset %q: has both one-byte and two-byte attributes", a.Name)
+	}
+	if a.Attr != nil && a.Palette.TwoByte() {
+		return fmt.Errorf("asset %q: %s needs two-byte attributes", a.Name, a.Palette)
+	}
+	if a.Attr2 != nil && !a.Palette.TwoByte() {
+		return fmt.Errorf("asset %q: %s has one-byte attributes", a.Name, a.Palette)
+	}
+	if a.Registers != nil && !a.HasAttrs() {
+		return fmt.Errorf("asset %q: a register table goes with attributes", a.Name)
+	}
+	if err := CheckRegisters(a.Palette, a.Registers); err != nil {
+		return fmt.Errorf("asset %q: %w", a.Name, err)
+	}
 	if a.HasAttrs() {
 		if a.Width%8 != 0 || a.Height%8 != 0 {
 			return fmt.Errorf("asset %q: attributed asset must be cell-aligned (got %dx%d)", a.Name, a.Width, a.Height)
 		}
 		cw, ch := a.Width/8, a.Height/8
-		if len(a.Attr) != ch {
-			return fmt.Errorf("asset %q: attr has %d rows, want %d", a.Name, len(a.Attr), ch)
+		rows := len(a.Attr)
+		if a.Attr2 != nil {
+			rows = len(a.Attr2)
 		}
-		for cy, row := range a.Attr {
-			if len(row) != cw {
-				return fmt.Errorf("asset %q: attr row %d has %d cells, want %d", a.Name, cy, len(row), cw)
+		if rows != ch {
+			return fmt.Errorf("asset %q: attr has %d rows, want %d", a.Name, rows, ch)
+		}
+		for cy := 0; cy < ch; cy++ {
+			n := 0
+			if a.Attr2 != nil {
+				n = len(a.Attr2[cy])
+			} else {
+				n = len(a.Attr[cy])
+			}
+			if n != cw {
+				return fmt.Errorf("asset %q: attr row %d has %d cells, want %d", a.Name, cy, n, cw)
 			}
 		}
 	}
@@ -135,6 +208,9 @@ func (a *Asset) bitmapBytes() int { return ((a.Width + 7) / 8) * a.Height }
 func (a *Asset) attrBytes() int {
 	if !a.HasAttrs() {
 		return 0
+	}
+	if a.Attr2 != nil {
+		return 2 * (a.Width / 8) * (a.Height / 8)
 	}
 	return (a.Width / 8) * (a.Height / 8)
 }
@@ -147,6 +223,14 @@ func EncodeCollection(c *Collection) ([]byte, error) {
 	out := make([]byte, filePreambleLen)
 	copy(out, zcutMagic)
 	out[4] = zcutVersion
+	for i := range c.Assets {
+		if (c.Assets[i].Palette != ZXPAL0 || c.Assets[i].Attr2 != nil) && out[4] < zcutVersion2 {
+			out[4] = zcutVersion2
+		}
+		if c.Assets[i].Registers != nil {
+			out[4] = zcutVersion3
+		}
+	}
 	out[7] = byte(len(c.Assets))
 
 	for i := range c.Assets {
@@ -180,11 +264,18 @@ func encodeAssetPayload(a *Asset) []byte {
 	if a.IsMask {
 		flags |= assetFlagIsMask
 	}
+	if a.Attr2 != nil {
+		flags |= assetFlagTwoByte
+	}
+	if a.Registers != nil {
+		flags |= assetFlagRegisters
+	}
 
 	p := make([]byte, fixedEntryLen+namePad)
 	binary.LittleEndian.PutUint16(p[0:], uint16(a.Width))
 	binary.LittleEndian.PutUint16(p[2:], uint16(a.Height))
 	p[4] = flags
+	p[5] = byte(a.Palette)
 	p[7] = byte(nameLen)
 	copy(p[fixedEntryLen:], a.Name)
 
@@ -200,7 +291,19 @@ func encodeAssetPayload(a *Asset) []byte {
 	}
 	p = append(p, bmp...)
 
-	if a.HasAttrs() {
+	if a.Attr2 != nil {
+		cw, ch := a.Width/8, a.Height/8
+		ink := make([]byte, cw*ch)
+		paper := make([]byte, cw*ch)
+		for cy := 0; cy < ch; cy++ {
+			for cx := 0; cx < cw; cx++ {
+				ink[cy*cw+cx] = a.Attr2[cy][cx].A
+				paper[cy*cw+cx] = a.Attr2[cy][cx].B
+			}
+		}
+		p = append(p, ink...)
+		p = append(p, paper...)
+	} else if a.HasAttrs() {
 		cw, ch := a.Width/8, a.Height/8
 		at := make([]byte, cw*ch)
 		for cy := 0; cy < ch; cy++ {
@@ -209,6 +312,9 @@ func encodeAssetPayload(a *Asset) []byte {
 			}
 		}
 		p = append(p, at...)
+	}
+	for _, c := range a.Registers {
+		p = append(p, c.R, c.G, c.B)
 	}
 	return p
 }
@@ -221,8 +327,9 @@ func DecodeCollection(data []byte) (*Collection, error) {
 	if string(data[0:4]) != zcutMagic {
 		return nil, fmt.Errorf("zcut: bad magic")
 	}
-	if data[4] != zcutVersion {
-		return nil, fmt.Errorf("zcut: unsupported version %d", data[4])
+	version := data[4]
+	if version < zcutVersion || version > zcutVersion3 {
+		return nil, fmt.Errorf("zcut: unsupported version %d", version)
 	}
 	n := int(data[7])
 
@@ -244,7 +351,7 @@ func DecodeCollection(data []byte) (*Collection, error) {
 		if chunkLen < payloadLen || chunkLen != roundUp8(payloadLen) {
 			return nil, fmt.Errorf("zcut: asset %d chunkLen %d inconsistent with payloadLen %d", i, chunkLen, payloadLen)
 		}
-		a, err := decodeAssetPayload(data[body:body+payloadLen], i)
+		a, err := decodeAssetPayload(data[body:body+payloadLen], i, version)
 		if err != nil {
 			return nil, err
 		}
@@ -254,7 +361,7 @@ func DecodeCollection(data []byte) (*Collection, error) {
 	return c, nil
 }
 
-func decodeAssetPayload(p []byte, idx int) (*Asset, error) {
+func decodeAssetPayload(p []byte, idx int, version byte) (*Asset, error) {
 	if len(p) < fixedEntryLen {
 		return nil, fmt.Errorf("zcut: asset %d payload too short", idx)
 	}
@@ -264,6 +371,26 @@ func decodeAssetPayload(p []byte, idx int) (*Asset, error) {
 	nameLen := int(p[7])
 	hasAttrs := flags&assetFlagHasAttrs != 0
 	isMask := flags&assetFlagIsMask != 0
+	twoByte := flags&assetFlagTwoByte != 0
+	hasRegs := flags&assetFlagRegisters != 0
+	if hasRegs && (version < zcutVersion3 || !hasAttrs) {
+		return nil, fmt.Errorf("zcut: asset %d: a register table needs version 3 and attributes", idx)
+	}
+	pal := ZXPAL0
+	if version >= zcutVersion2 {
+		pal = Palette(p[5])
+		if !pal.Valid() {
+			return nil, fmt.Errorf("zcut: asset %d has unknown palette %d", idx, p[5])
+		}
+		if hasAttrs && twoByte != pal.TwoByte() {
+			return nil, fmt.Errorf("zcut: asset %d: two-byte flag does not match %s", idx, pal)
+		}
+	} else if twoByte {
+		return nil, fmt.Errorf("zcut: asset %d: two-byte attributes need version 2", idx)
+	}
+	if twoByte && !hasAttrs {
+		return nil, fmt.Errorf("zcut: asset %d: two-byte flag without attributes", idx)
+	}
 
 	if w <= 0 || h <= 0 {
 		return nil, fmt.Errorf("zcut: asset %d has non-positive dimensions", idx)
@@ -281,8 +408,15 @@ func decodeAssetPayload(p []byte, idx int) (*Asset, error) {
 	attrBytes := 0
 	if hasAttrs {
 		attrBytes = (w / 8) * (h / 8)
+		if twoByte {
+			attrBytes *= 2
+		}
 	}
-	want := fixedEntryLen + namePad + bmpBytes + attrBytes
+	regBytes := 0
+	if hasRegs {
+		regBytes = 3 * (pal.Last() + 1)
+	}
+	want := fixedEntryLen + namePad + bmpBytes + attrBytes + regBytes
 	if len(p) != want {
 		return nil, fmt.Errorf("zcut: asset %d payloadLen %d, derived %d", idx, len(p), want)
 	}
@@ -294,7 +428,7 @@ func decodeAssetPayload(p []byte, idx int) (*Asset, error) {
 		}
 	}
 
-	a := &Asset{Name: name, Width: w, Height: h, IsMask: isMask}
+	a := &Asset{Name: name, Width: w, Height: h, IsMask: isMask, Palette: pal}
 
 	bmpOff := fixedEntryLen + namePad
 	a.Ink = make([][]bool, h)
@@ -306,7 +440,17 @@ func decodeAssetPayload(p []byte, idx int) (*Asset, error) {
 		}
 	}
 
-	if hasAttrs {
+	if twoByte {
+		cw, ch := w/8, h/8
+		atOff := bmpOff + bmpBytes
+		a.Attr2 = make([][]CellAttr, ch)
+		for cy := 0; cy < ch; cy++ {
+			a.Attr2[cy] = make([]CellAttr, cw)
+			for cx := 0; cx < cw; cx++ {
+				a.Attr2[cy][cx] = CellAttr{A: p[atOff+cy*cw+cx], B: p[atOff+cw*ch+cy*cw+cx]}
+			}
+		}
+	} else if hasAttrs {
 		cw, ch := w/8, h/8
 		atOff := bmpOff + bmpBytes
 		a.Attr = make([][]Attribute, ch)
@@ -315,6 +459,13 @@ func decodeAssetPayload(p []byte, idx int) (*Asset, error) {
 			for cx := 0; cx < cw; cx++ {
 				a.Attr[cy][cx] = AttributeFromByte(p[atOff+cy*cw+cx])
 			}
+		}
+	}
+	if hasRegs {
+		off := bmpOff + bmpBytes + attrBytes
+		a.Registers = make(Registers, pal.Last()+1)
+		for i := range a.Registers {
+			a.Registers[i] = color.RGBA{p[off+3*i], p[off+3*i+1], p[off+3*i+2], 0xFF}
 		}
 	}
 	return a, nil

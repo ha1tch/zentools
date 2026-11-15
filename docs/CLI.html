@@ -10,7 +10,7 @@
 <div class="zsp-border">
 <div class="zsp-page">
 <div class="zsp-nav">
-<a href="CLI.html">CLI manual</a><a href="TAPE-HANDLING.html">Tape handling</a><a href="SPRITE-HANDLING.html">Sprite handling</a><a href="LIBRARY.html">Library</a><a href="ARCHITECTURE.html">Architecture</a>
+<a href="CLI.html">CLI manual</a><a href="TAPE-HANDLING.html">Tape handling</a><a href="SPRITE-HANDLING.html">Sprite handling</a><a href="ZXMODE-HANDLING.html">ZXMODE handling</a><a href="NEXT-HANDLING.html">Next handling</a><a href="LIBRARY.html">Library</a><a href="ARCHITECTURE.html">Architecture</a>
 
 </div>
 <div class="zsp-kicker">zentools manual</div>
@@ -38,6 +38,8 @@ snapshots</a></li>
 <li><a href="#zx-pzx">zx pzx</a></li>
 <li><a href="#zx-basic">zx basic</a></li>
 <li><a href="#zx-scr">zx scr</a></li>
+<li><a href="#zx-next">zx next</a></li>
+<li><a href="#zx-zx0">zx zx0</a></li>
 <li><a href="#zx-snap">zx snap</a></li>
 <li><a href="#zx-rzx">zx rzx</a></li>
 <li><a href="#zx-convert">zx convert</a></li>
@@ -337,10 +339,11 @@ format. Unlike the focused tools, its flags may appear in any position,
 before or after the positional arguments.</p>
 <pre><code>zx &lt;command&gt; [arguments]</code></pre>
 <p>Commands: <code>tap</code>, <code>tzx</code>, <code>pzx</code>,
-<code>basic</code>, <code>scr</code>, <code>snap</code>,
-<code>rzx</code>, <code>convert</code>, <code>edit</code>,
-<code>build</code>, <code>info</code>, and <code>version</code>. Running
-any command with no arguments prints its own help.</p>
+<code>basic</code>, <code>scr</code>, <code>next</code>,
+<code>zx0</code>, <code>snap</code>, <code>rzx</code>,
+<code>convert</code>, <code>edit</code>, <code>build</code>,
+<code>info</code>, and <code>version</code>. Running any command with no
+arguments prints its own help.</p>
 <p>Throughout, addresses may be written in hexadecimal
 (<code>0x8000</code> or <code>$8000</code>) or in decimal
 (<code>32768</code>).</p>
@@ -436,61 +439,826 @@ internal byte format. Matching is case-independent by default;
 <code>detokenise</code> does the reverse, printing to standard output
 unless <code>-o</code> is given.</p>
 <h3 id="zx-scr">zx scr</h3>
-<pre><code>zx scr encode [flags] &lt;image&gt;              PNG/JPEG/GIF -&gt; .scr
-zx scr decode [flags] &lt;file.scr&gt;           .scr -&gt; PNG
-zx scr crop   [flags] &lt;image|.scr&gt;         crop a region (or sprite) to PNG
-zx scr cut    [flags] &lt;file.scr&gt;           extract a sub-region into a .cut asset collection
-zx scr paste  [flags] &lt;collection:name&gt; &lt;target.scr&gt;   paste an asset into a screen
-zx scr ls     &lt;file.cut&gt;                   list a .cut collection&#39;s assets
-zx scr atlas  [flags] &lt;file.cut&gt;           render a collection as a labelled contact sheet
+<pre><code>zx scr encode   [flags] &lt;image&gt;               image -&gt; .scr, .zm1, .zm2 or a .cut asset
+zx scr decode   [flags] &lt;screen&gt;              .scr, .zm1 or .zm2 -&gt; PNG
+zx scr fit      [flags] &lt;image&gt;               fit an image as encode would, to PNG
+zx scr crop     [flags] &lt;image|screen&gt;        crop a region (or sprite) to PNG
+zx scr cut      [flags] &lt;screen&gt;              extract a sub-region into a .cut asset collection
+zx scr paste    [flags] &lt;collection:name&gt; &lt;screen&gt;   paste an asset into a screen
+zx scr ls       &lt;file.cut&gt;                    list a .cut collection&#39;s assets
+zx scr atlas    [flags] &lt;file.cut&gt;            render a collection as a labelled contact sheet
+zx scr flip     -h|-v [flags] &lt;screen|file.cut|image&gt;   mirror a screen, assets or an image
+zx scr convert  -to &lt;zxpalN&gt; [flags] &lt;file.cut|screen&gt;  rewrite attributes for another palette
 zx scr fromsnap [flags] &lt;file.sna|file.z80&gt;   extract a snapshot&#39;s display file as .scr
-zx scr ocr    [flags] &lt;image|.scr&gt;         recognise on-screen text as plain text</code></pre>
+zx scr ocr      [flags] &lt;image|screen&gt;        recognise on-screen text as plain text
+zx scr palette  [-registers f] [-banks] [-o file.csv|file.png] &lt;zxpalN&gt;   list a palette&#39;s registers
+zx scr fitregs  -add &lt;n&gt; -o &lt;file.csv&gt; [flags] &lt;picture&gt;...   fit colours to add to a palette
+zx scr compare  [-metric m] &lt;a&gt; &lt;b&gt;           compare two images or screens</code></pre>
 <p>A <code>.scr</code> file is the raw ZX Spectrum display: 6912 bytes,
 the pixel bitmap followed by the per-8x8-cell colour attributes, exactly
 as they sit in Spectrum RAM at <code>0x4000</code>-<code>0x5AFF</code>.
 <code>encode</code> and <code>decode</code> convert to and from ordinary
-images, <code>crop</code> extracts a region (or, for a
-<code>.scr</code>, a sprite's bounding box) as PNG, and
-<code>fromsnap</code> pulls the display straight out of a snapshot
-without needing a running machine.</p>
-<p><code>cut</code>, <code>paste</code>, <code>ls</code>, and
-<code>atlas</code> manage <code>.cut</code> files: named collections of
-extracted regions (sprites, tiles, UI panels) pulled from one or more
-<code>.scr</code> screens, with sub-region reuse across a project in
-mind. <code>cut</code> adds a named region to a collection (creating it
-if it doesn't exist); <code>paste</code> composites a collection's asset
-back onto a target screen at a given position, with a bit operation
+images (PNG, JPEG, GIF or BMP), <code>crop</code> extracts a region (or,
+for a screen, a sprite's bounding box) as PNG, and <code>fromsnap</code>
+pulls the display straight out of a snapshot without needing a running
+machine.</p>
+<p><code>cut</code>, <code>paste</code>, <code>ls</code>,
+<code>atlas</code>, <code>flip</code> and <code>convert</code> manage
+<code>.cut</code> files: named collections of extracted regions
+(sprites, tiles, UI panels) pulled from one or more screens, with
+sub-region reuse across a project in mind. <code>cut</code> adds a named
+region to a collection (creating it if it doesn't exist);
+<code>paste</code> composites a collection's asset back onto a target
+screen at a given position, with a bit operation
 (<code>or</code>/<code>and</code>/<code>copy</code>/<code>xor</code>)
 and an optional mask asset for non-rectangular shapes; <code>ls</code>
 lists a collection's contents; <code>atlas</code> renders the whole
-collection as a labelled contact-sheet PNG for a visual overview.</p>
-<p><code>ocr</code> recognises the text on a screen — matching each 8x8
-character cell against the real Spectrum ROM font — and prints it as
-plain text. This exists for driving emulators through captured
-screenshots: an automated session can send input, capture the screen,
-and read back exactly what printed, rather than a human reading each
-captured image by eye. A <code>.scr</code> file needs no further flags
-(it is always exactly the native 256x192 pixels); an arbitrary
-screenshot — an emulator window, scaled and offset within a larger
-capture — needs <code>--origin</code> (the display's top-left pixel
-within the image) and <code>--scale</code> (pixels per emulated pixel)
-to say where the 256x192 display actually sits. Recognition matches each
-cell against the standard 96-glyph ROM set (codes 32-127); content
-outside that set — box-drawing borders, UDGs, decorative graphics — is
-matched to its nearest visual approximation rather than skipped, so
-garbage characters in a non-textual region of the screen are expected,
-not a bug.</p>
-<p>Example — read the text off a captured CSpect window, rendered at
-<code>-w3</code> (3x scale, with the classic 32-pixel border also scaled
-3x before any window chrome):</p>
-<pre><code>zx scr ocr --origin=256,112 --scale=3 screenshot.png</code></pre>
-<p>Example — read a <code>.scr</code> file directly, no geometry
-needed:</p>
-<pre><code>zx scr ocr screen.scr</code></pre>
-<p>Run <code>zx scr -h</code> for the full flag reference, including
-<code>crop</code>'s pixel- vs cell-based region syntax and
-<code>--auto</code> sprite-extent detection, and <code>cut</code>'s
-attribute and mask options.</p>
+collection as a labelled contact-sheet PNG for a visual overview;
+<code>flip</code> mirrors assets, and <code>convert</code> rewrites
+their attributes for another palette.</p>
+<h4 id="zxmode-modes-and-zxpal-palettes">ZXMODE modes and ZXPAL
+palettes</h4>
+<p>The ZXMODE video specification for the Spectrum family adds two
+linear screen modes to the classic one and five palettes. The <a
+href="ZXMODE-HANDLING.html">ZXMODE handling manual</a> walks through them
+with a worked example; this section is the reference.</p>
+<table>
+<thead>
+<tr class="header">
+<th><code>--mode</code></th>
+<th>Picture</th>
+<th>Stored form</th>
+<th>File</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>zxmode0</code></td>
+<td>256x192, classic interleaved layout</td>
+<td>6912 bytes, as a <code>.scr</code></td>
+<td><code>.scr</code></td>
+</tr>
+<tr class="even">
+<td><code>zxmode1</code></td>
+<td>256x192, linear</td>
+<td>bitmap, then the attribute plane(s): 6912 or 7680 bytes</td>
+<td><code>.zm1</code></td>
+</tr>
+<tr class="odd">
+<td><code>zxmode2</code></td>
+<td>512x384, linear</td>
+<td>two half-screen pages, top then bottom: 27648 or 30720 bytes</td>
+<td><code>.zm2</code></td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr class="header">
+<th><code>--palette</code></th>
+<th>Registers</th>
+<th>Attribute</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>zxpal0</code></td>
+<td>16: the Spectrum colours</td>
+<td>one byte, classic (flash, bright, paper, ink)</td>
+</tr>
+<tr class="even">
+<td><code>zxpal1</code></td>
+<td>32: the Spectrum colours in two banks, 16 greys in two more</td>
+<td>one byte; bits 7-6 select the bank</td>
+</tr>
+<tr class="odd">
+<td><code>zxpal2</code></td>
+<td>32: the eight colours at four levels</td>
+<td>one byte; bits 7-6 select the level</td>
+</tr>
+<tr class="even">
+<td><code>zxpal3</code></td>
+<td>64: twelve hues and four greys at four levels</td>
+<td>two bytes, ink register then paper register</td>
+</tr>
+<tr class="odd">
+<td><code>zxpal4</code></td>
+<td>112: ZXPAL3 plus tones, tints and shades</td>
+<td>two bytes, as ZXPAL3</td>
+</tr>
+</tbody>
+</table>
+<p><code>zxmode0</code> takes the one-byte palettes only. In the linear
+modes a two-byte palette stores two attribute planes after the bitmap,
+ink then paper.</p>
+<p>A screen file does not record its palette, so every command that
+reads one (<code>decode</code>, <code>crop</code>, <code>ocr</code>,
+<code>cut</code>, <code>paste</code>, <code>flip</code>,
+<code>convert</code>, <code>compare</code>) takes <code>--mode</code>
+(default from the extension: <code>.zm1</code>, <code>.zm2</code>,
+otherwise <code>zxmode0</code>), <code>--palette</code> (default
+<code>zxpal0</code>) and <code>--registers</code>. A two-byte file read
+without <code>--palette</code> is refused with a hint, and
+<code>zx info</code> on a <code>.zm1</code> or <code>.zm2</code> says
+which palettes its size fits.</p>
+<p><strong>Loaded registers.</strong> The palette registers are loadable
+(Part 5 of the specification), so a program may show a screen in colours
+other than the palette's reset values. <code>--registers file.csv</code>
+names the register table a screen is meant for, for encoding, decoding
+and every command above. The CSV has a header and one row per register;
+the colour comes from columns <code>r</code>, <code>g</code> and
+<code>b</code> (or <code>hex</code>), and the register number from
+<code>register</code>, <code>slot</code> or <code>index</code> (or the
+row's position). <code>zx scr palette</code> writes one
+(<code>-o file.csv</code>, from the reset values or from
+<code>--registers</code>), and the specification's
+<code>data/zxpalN_registers.csv</code> files read as they are.</p>
+<p><strong>Encoding.</strong> <code>--mode</code>,
+<code>--palette</code> or <code>--registers</code> selects the
+specification's reference encoder: for each 8x8 cell it chooses the pair
+of register colours that best covers the cell and dithers between them
+in linear light. It produces the same picture, pixel for pixel, as the
+specification's own reference implementation. The classic converter used
+without these flags posterises first, which turns normal colours into
+bright ones; the reference encoder with <code>--palette zxpal0</code>
+keeps both.</p>
+<p>An output ending in <code>.cut</code> appends the picture to a ZCUT
+collection as one asset (<code>--name</code>, default the input's base
+name).</p>
+<pre><code>zx scr encode photo.jpg --resize fill --filter lanczos --mode zxmode2 --palette zxpal4 -o photo.zm2
+zx scr decode photo.zm2 --palette zxpal4 -o check.png
+zx scr encode photo.jpg --resize bestfit --mode zxmode1 --palette zxpal2 -o pics.cut --name title
+zx scr encode photo.jpg --resize fill --mode zxmode0 --palette zxpal1 -o classic.scr
+zx scr encode photo.jpg --resize fill --mode zxmode2 --palette zxpal4 --registers mine.csv -o photo.zm2</code></pre>
+<p><strong>Fitting.</strong> An image that is not the screen's size
+needs <code>--resize</code>:</p>
+<table>
+<thead>
+<tr class="header">
+<th><code>--resize</code></th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>stretch</code></td>
+<td>scale to fill, ignoring aspect ratio</td>
+</tr>
+<tr class="even">
+<td><code>bestfit</code></td>
+<td>scale to fit, preserving aspect, padding the border with
+<code>--fillattr</code>'s paper</td>
+</tr>
+<tr class="odd">
+<td><code>centre</code></td>
+<td>no scaling; centre, cropping or padding</td>
+</tr>
+<tr class="even">
+<td><code>fill</code> (<code>cover</code>)</td>
+<td>scale to cover, preserving aspect, cropping the overflow</td>
+</tr>
+</tbody>
+</table>
+<p><code>--filter lanczos</code> scales with Pillow's Lanczos resampler
+instead of the default (bilinear, or an area filter when
+<code>fill</code> shrinks), and <code>--centering x,y</code> places
+<code>fill</code>'s crop (each 0 to 1; 0.5,0.5 centres it).
+<code>--trim n</code> removes a scan margin of n pixels from every edge
+first, and <code>--grey</code> converts the fitted picture to luminance
+as the specification does (ITU-R 601, Pillow's
+<code>convert("L")</code>). Together they are the specification's
+picture fit: <code>--resize fill --filter lanczos</code> gives, byte for
+byte, the 512x384 picture its tools produce from the same pixels (the
+picture table in <code>pictures/README.md</code> gives each picture's
+trim and centring). <code>zx scr fit</code> writes the fitted picture as
+PNG (<code>--size</code>, default 512x384), to look at or to compare an
+encoding against.</p>
+<p>JPEG colour is rebuilt as libjpeg-turbo (behind Pillow) rebuilds it,
+with its chroma interpolation, rather than from the nearest chroma
+sample, so a JPEG decodes to within a level or so of what the
+specification's tools see; the remaining differences come from the two
+decoders' inverse DCTs.</p>
+<p><strong>Experimental encoder options.</strong> Part 4 of the
+specification lists untested ways an encoder could improve on the
+reference one; three are here, each leaving the reference encoder when
+used:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Flag</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>--diffuse f</code></td>
+<td>spreads each cell's colour error, times f (0 to 1), into the cells
+not yet encoded, as Floyd-Steinberg spreads a pixel's; the encoding then
+runs on one CPU</td>
+</tr>
+<tr class="even">
+<td><code>--flat n</code></td>
+<td>fills cells whose pixels spread less than n (RMS, 0-255) with one
+colour instead of dithering</td>
+</tr>
+<tr class="odd">
+<td><code>--linear-pairs</code></td>
+<td>chooses each cell's pair by distance in linear light rather than
+sRGB</td>
+</tr>
+</tbody>
+</table>
+<p>On the specification's 22 colour pictures, fitted as above, the mean
+error (blurred RMS, below) came out as follows:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Palette</th>
+<th>Reference</th>
+<th><code>--diffuse 0.5</code></th>
+<th><code>--diffuse 1</code></th>
+<th><code>--flat 4</code></th>
+<th><code>--linear-pairs</code></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>ZXPAL0</td>
+<td>31.20</td>
+<td>22.57</td>
+<td>22.23</td>
+<td>34.56</td>
+<td>45.39</td>
+</tr>
+<tr class="even">
+<td>ZXPAL2</td>
+<td>20.79</td>
+<td>17.35</td>
+<td>18.39</td>
+<td>21.90</td>
+<td>31.04</td>
+</tr>
+<tr class="odd">
+<td>ZXPAL4</td>
+<td>8.67</td>
+<td>7.55</td>
+<td>7.63</td>
+<td>10.82</td>
+<td>11.96</td>
+</tr>
+</tbody>
+</table>
+<p>Diffusing half the error lowers the error by 13% (ZXPAL4) to 28%
+(ZXPAL0), and also the lighter-blur error that keeps more fine detail.
+Filling flat cells and choosing pairs in linear light both made it
+worse, as measured, and linear-light pairs with half diffusion was worse
+than half diffusion alone (28.62, 23.58 and 10.17).</p>
+<p><code>--penalty p</code> sets the weight of the span term in each
+pair's score (the reference encoder's is 0.204; a larger one favours
+pairs of closer colours, a smaller one wider pairs and more dithering).
+The output is still a screen.</p>
+<p><strong>Trying palette designs.</strong> Two encode flags take the
+encoder beyond what a screen file can hold, for weighing palette ideas
+as the specification did; the output is then a PNG to look at and
+measure (<code>-o file.png</code>), not a screen:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Flag</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>--banks file.csv</code></td>
+<td>encodes over these colours instead of a palette's: one row per
+colour, columns <code>bank</code>, <code>r</code>, <code>g</code>,
+<code>b</code> (or <code>hex</code>); each cell takes its two colours
+from one bank. Without a <code>bank</code> column every colour is in one
+bank, as in ZXPAL3 and ZXPAL4</td>
+</tr>
+<tr class="even">
+<td><code>--cell WxH</code></td>
+<td>cells of another size (<code>4</code> for 4x4), which must divide
+the picture. 4x4 cells dither with the 4x4 Bayer matrix, other sizes
+with the 8x8 one laid over the whole picture, as the specification's
+tools do</td>
+</tr>
+</tbody>
+</table>
+<p><code>zx scr palette zxpalN --banks -o file.csv</code> writes a
+palette's banks in the encoder's order, and encoding over that file
+gives the palette's own encoding pixel for pixel. 4x4 cells, cells 4
+wide and 8 tall, and other penalties give the pictures the
+specification's <code>zxcommon.render</code> and
+<code>zxfast.render_fast</code> give.</p>
+<p><code>zx scr fitregs</code> is the specification's register search
+(<code>tools/z4_palette_search.py</code>): it adds <code>--add n</code>
+colours to ZXPAL3 or ZXPAL4 (<code>--palette</code>,
+<code>--registers</code>) or to a one-bank table (<code>--banks</code>),
+chosen so that the pixels of the given pictures lie nearer to some
+colour. It blurs each picture by 1.5, samples its pixels, picks the
+colours greedily from candidates drawn from the sample, each time the
+one that most reduces the squared distance to the nearest colour, and
+refines them by k-means with the base colours fixed. It writes the base
+colours and the new ones as one bank, for <code>encode --banks</code>,
+and prints how far the sample lies from its nearest colour before and
+after. Its random draws are its own and seeded (<code>--seed</code>), so
+a fit repeats exactly but its colours are not the Python script's. The
+pictures are used as they are: fit them first.</p>
+<p>Run as the specification ran it, on its ten development pictures in
+two folds of five (each fold's pictures encoded with colours fitted to
+the other fold), the mean error came out as follows:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Colours</th>
+<th>ZXPAL3</th>
+<th>+8</th>
+<th>+16</th>
+<th>+32</th>
+<th>+48</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>zx scr fitregs</code></td>
+<td>13.16</td>
+<td>10.14</td>
+<td>9.23</td>
+<td>8.58</td>
+<td>7.95</td>
+</tr>
+<tr class="even">
+<td>the specification (section 17)</td>
+<td>13.16</td>
+<td>10.28</td>
+<td>9.42</td>
+<td>8.47</td>
+<td>7.91</td>
+</tr>
+</tbody>
+</table>
+<pre><code>zx scr palette zxpal4 --banks -o zxpal4_banks.csv
+zx scr encode fitted.png --mode zxmode2 --banks zxpal4_banks.csv --cell 4 -o c4.png
+zx scr fitregs --palette zxpal3 --add 16 -o z3_16.csv dev/*.png
+zx scr encode test.png --mode zxmode2 --banks z3_16.csv -o test_16.png
+zx scr compare --metric blur test.png test_16.png</code></pre>
+<p><strong>Comparing.</strong> <code>compare</code> counts the pixels
+where two images differ and exits non-zero if any do; a 256x192 image is
+doubled to compare it with a 512x384 one, as ZXMODE1 appears on the
+ZXMODE2 raster. Either side may be a screen file. <code>--metric</code>
+gives the specification's measures instead:</p>
+<table>
+<thead>
+<tr class="header">
+<th><code>--metric</code></th>
+<th>Measure</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>blur</code></td>
+<td>the specification's error: RMS difference (0-255) after a Gaussian
+blur of 1.5 pixels per channel, computed as its tools compute it
+(Pillow's blur), so the numbers match theirs</td>
+</tr>
+<tr class="even">
+<td><code>light</code></td>
+<td>the same with a blur of 0.75</td>
+</tr>
+<tr class="odd">
+<td><code>blur=&lt;sigma&gt;</code></td>
+<td>any other blur</td>
+</tr>
+<tr class="even">
+<td><code>rms</code></td>
+<td>no blur</td>
+</tr>
+<tr class="odd">
+<td><code>ssim</code></td>
+<td>SSIM, as scikit-image computes it with its defaults</td>
+</tr>
+<tr class="even">
+<td><code>all</code></td>
+<td>all of the above</td>
+</tr>
+</tbody>
+</table>
+<pre><code>zx scr fit photo.jpg --resize fill --filter lanczos -o fitted.png
+zx scr encode fitted.png --mode zxmode2 --palette zxpal4 -o photo.zm2
+zx scr compare --metric blur fitted.png photo.zm2 --palette zxpal4</code></pre>
+<p><strong>Assets and palettes.</strong> A ZCUT collection records, for
+every attributed asset, its palette (which fixes the attribute format:
+ZXPAL0's classic byte, ZXPAL1's and ZXPAL2's banked byte, or ZXPAL3's
+and ZXPAL4's ink and paper register planes) and, when it was cut from a
+screen with loaded registers, its own register table, so it renders and
+converts as it was drawn. Version 1 files are ZXPAL0 throughout, version
+2 adds palettes and two-byte attributes, version 3 adds register tables;
+each collection is written at the lowest version that holds it.</p>
+<p><code>cut</code> reads any screen (<code>--mode</code>,
+<code>--palette</code>, <code>--registers</code>) and keeps a
+cell-aligned region's attributes in its palette. <code>paste</code>
+writes an attributed asset's attributes at a cell-aligned position and,
+when the asset's palette or registers differ from the target's, converts
+them first and says so. <code>convert --to &lt;zxpalN&gt;</code> (with
+<code>--to-registers</code>) does the same conversion on its own, for
+one asset (<code>--name</code>) or a whole collection, or for a screen
+(<code>--to-mode</code> may switch it between <code>zxmode0</code> and
+<code>zxmode1</code>, which share a size). The bitmap is kept; each cell
+takes the target colours nearest its own ink and paper, weighted by how
+many of its pixels each covers, and within one bank for a one-byte
+palette, whose ink and paper share a bank. A colour the target holds
+exactly is kept exactly; flash is kept only from ZXPAL0 to ZXPAL0.</p>
+<p><code>flip -h</code> mirrors left to right and <code>flip -v</code>
+top to bottom: a screen (written back in its own format), a collection's
+assets (all, or <code>--name</code>), or an image (written as PNG).
+Attribute cells move with their pixels.</p>
+<pre><code>zx scr cut title.zm2 --palette zxpal4 --cells 2,2,8,4 --name logo -o ui.cut
+zx scr paste ui.cut:logo game.scr --at 64,16 --op copy
+zx scr convert ui.cut --to zxpal1 -o ui_zxpal1.cut
+zx scr flip ui.cut --name logo -h -o ui_mirrored.cut</code></pre>
+<p><code>palette</code> prints a palette's registers (number, hex, red,
+green, blue), or writes them as CSV or as a PNG of swatches, one row per
+bank or level; <code>--registers</code> shows a loaded table instead of
+the reset values.</p>
+<pre><code>zx scr palette zxpal4 -o zxpal4.png
+zx scr compare expected.png rebuilt-from-simulation.png</code></pre>
+<h3 id="zx-next">zx next</h3>
+<pre><code>zx next palette info    [-layout l] &lt;file&gt;
+zx next palette decode  [-layout l] [-o file.png] &lt;file&gt;
+zx next palette encode  [colour flags] -o file.nxp &lt;image&gt;
+zx next palette convert -to l [-from l] [-round m] -o out &lt;file&gt;
+zx next palette std     [-layout l] -o file.nxp
+zx next sprite  info    [-depth 8|4] &lt;file.spr&gt;
+zx next sprite  decode  [-depth 8|4] [-palette f] [-transparent n] [-per-row n] [-range a-b] [-split dir] -o file.png &lt;file.spr&gt;
+zx next sprite  encode  [-depth 8|4] [-dedup] [-pad n] [colour flags] -o file.spr &lt;image&gt;
+zx next attrs   encode  [-fixed5] -o file.bin &lt;file.json&gt;
+zx next attrs   decode  [-fixed5] [-o file.json] &lt;file.bin&gt;
+zx next bitmap  info    &lt;file.nxi&gt;
+zx next bitmap  decode  [-mode m] [-palette f] [-transparent n] -o file.png &lt;file.nxi&gt;
+zx next bitmap  encode  -mode m [-embed] [-resize r] [colour flags] -o file.nxi &lt;image&gt;
+zx next timex   decode  -mode hires|hicolour [-ink n] -o file.png &lt;file&gt;
+zx next timex   encode  -mode hires|hicolour [-ink n] [-resize r] -o file &lt;image&gt;
+zx next tiles   encode  [tile flags] [colour flags] -o base &lt;image&gt;
+zx next tiles   decode  [-size WxH] [-depth n] [-map f -map-size WxH ...] -o file.png &lt;file.nxt&gt;
+zx next nex     info    &lt;file.nex&gt;
+zx next nex     extract -o dir &lt;file.nex&gt;
+zx next nex     build   [flags] -o file.nex</code></pre>
+<p>ZX Spectrum Next graphics and program files. Every Next colour is
+9-bit RGB333, three bits each of red, green and blue. The <a
+href="NEXT-HANDLING.html">Next handling manual</a> works through them for
+a small game; this section is the reference.</p>
+<p><strong>Palettes.</strong> A palette file is a list of colours with
+no header. Four layouts are read and written (<code>-layout</code>,
+<code>-from</code>, <code>-to</code>):</p>
+<table>
+<thead>
+<tr class="header">
+<th>Layout</th>
+<th>Bytes per colour</th>
+<th>Holds</th>
+<th>Written by</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>rgb333</code> (default)</td>
+<td>2</td>
+<td>RGB332, then the low blue bit in bit 0 (bit 7, the Layer 2 priority
+bit, is kept as read)</td>
+<td>gfx2next, nextraw: the usual <code>.nxp</code></td>
+</tr>
+<tr class="even">
+<td><code>rgb332</code></td>
+<td>1</td>
+<td>RRRGGGBB; the hardware shows the missing blue bit as the OR of the
+other two</td>
+<td>gfx2next <code>-pal-rgb332</code></td>
+</tr>
+<tr class="odd">
+<td><code>gbr444</code></td>
+<td>2</td>
+<td>GGGGBBBB then xxxxRRRR</td>
+<td>gfx2next <code>-pal-gbr444</code></td>
+</tr>
+<tr class="even">
+<td><code>bgr222</code></td>
+<td>1</td>
+<td>xxBBGGRR, the Master System layout</td>
+<td>gfx2next <code>-pal-bgr222</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>palette std</code> writes the Next's standard palette, in which
+index i is the RGB332 colour i. <code>palette convert</code> rewrites a
+palette in another layout.</p>
+<p><strong>Colour flags.</strong> <code>palette</code>,
+<code>sprite</code>, <code>bitmap</code> and <code>tiles encode</code>
+share the flags that turn an image into palette indices:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Flag</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>-colors n</code></td>
+<td>palette size (default 256, or 16 at 4 bits per pixel)</td>
+</tr>
+<tr class="even">
+<td><code>-round m</code></td>
+<td>how an 8-bit channel becomes 3 bits: <code>nearest</code> (the
+default, and nextbmp's), <code>floor</code>, <code>ceil</code>, or
+<code>distance</code> (gfx2next's default: the nearest of the 512
+colours, the lower on a tie; it differs from <code>nearest</code> only
+on exact ties)</td>
+</tr>
+<tr class="odd">
+<td><code>-dither d</code></td>
+<td><code>none</code> (default) or <code>fs</code> (Floyd-Steinberg),
+used when colours are chosen or matched</td>
+</tr>
+<tr class="even">
+<td><code>-transparent n</code></td>
+<td>pixels less than half opaque take index n; that entry holds the
+RGB332 colour of n. Layer 2 compares that colour with NextReg 0x14, and
+sprites compare the index with NextReg 0x4B (4-bit sprites its low four
+bits), so 0xE3 suits both at their reset values (3 for 4-bit sprites);
+the tilemap compares its index with NextReg 0x4C</td>
+</tr>
+<tr class="odd">
+<td><code>-match f</code></td>
+<td>map the image's colours to the nearest of this palette's
+(<code>-match-layout</code> gives its layout)</td>
+</tr>
+<tr class="even">
+<td><code>-std</code></td>
+<td>map onto the standard palette (8 bits only; gfx2next
+<code>-pal-std</code>)</td>
+</tr>
+<tr class="odd">
+<td><code>-min</code></td>
+<td>sort the palette, drop duplicates and renumber the pixels (gfx2next
+<code>-pal-min</code>)</td>
+</tr>
+<tr class="even">
+<td><code>-palette f</code></td>
+<td>write the palette here, in <code>-layout</code>'s layout</td>
+</tr>
+</tbody>
+</table>
+<p>An indexed image (an indexed PNG or BMP) keeps its own palette in its
+own order, and its pixel indices are used as they are, as gfx2next does;
+at 4 bits per pixel the palette is its first 16 colours and an index its
+low four bits. Any other image is matched (<code>-match</code>), mapped
+to the standard palette (<code>-std</code>) or reduced: when it has no
+more distinct RGB333 colours than fit, they are kept exactly, in the
+order they first appear; otherwise colours are chosen by median cut,
+splitting first the group of colours that lies furthest from its mean.
+Images may be PNG, BMP (uncompressed, 1 to 32 bits), GIF or JPEG.</p>
+<p><strong>Sprites.</strong> A <code>.spr</code> file is 16x16 patterns
+one after another: 256 bytes each at 8 bits per pixel, 128 at 4 (the
+left pixel in the high nibble). <code>-dedup</code> drops patterns
+identical to an earlier one and says which; <code>-pad n</code> fills
+the sheet to n patterns with the <code>-transparent</code> index (or 0).
+<code>decode -range a-b</code> draws some patterns only, and
+<code>-split dir</code> writes each as its own PNG
+(<code>dir/NNN.png</code>, numbered from the file).</p>
+<p><strong>Sprite attributes.</strong> <code>attrs</code> converts
+between a JSON list and the table of four or five bytes per sprite that
+port 0x57 takes. Each JSON object has <code>x</code>, <code>y</code>,
+<code>visible</code>, <code>pattern</code> (0-63) and optionally
+<code>palette_offset</code>, <code>mirror_x</code>,
+<code>mirror_y</code>, <code>rotate</code>, <code>extended</code> (send
+the fifth byte), <code>relative</code>, <code>four_bit</code>,
+<code>n6</code> (the upper half of a 4-bit pattern slot),
+<code>unified</code>, <code>scale_x</code>, <code>scale_y</code> (0-3
+for 1x to 8x), <code>relative_palette</code> and
+<code>relative_pattern</code>. A relative sprite's <code>x</code> and
+<code>y</code> are its offset from the anchor, -128 to 127.
+<code>-fixed5</code> writes five bytes for every sprite (setting each E
+bit, so a port 0x57 upload stays in step). The layout follows the Next's
+documentation; it has not been checked against hardware here.</p>
+<p><strong>Bitmaps.</strong> <code>bitmap</code> reads and writes Layer
+2 and LoRes screens (<code>.nxi</code>, <code>.sl2</code>,
+<code>.slr</code>): raw pixels with no header, optionally preceded by
+their palette (<code>-embed</code>; <code>decode</code> finds an
+embedded one from the file's size).</p>
+<table>
+<thead>
+<tr class="header">
+<th>Mode</th>
+<th>Size</th>
+<th>Bits</th>
+<th>Stored</th>
+<th>Bytes</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>256x192</code></td>
+<td>256x192</td>
+<td>8</td>
+<td>row by row</td>
+<td>49152</td>
+</tr>
+<tr class="even">
+<td><code>320x256</code></td>
+<td>320x256</td>
+<td>8</td>
+<td>column by column</td>
+<td>81920</td>
+</tr>
+<tr class="odd">
+<td><code>640x256</code></td>
+<td>640x256</td>
+<td>4</td>
+<td>column by column, two pixels per byte</td>
+<td>81920</td>
+</tr>
+<tr class="even">
+<td><code>lores</code></td>
+<td>128x96</td>
+<td>8</td>
+<td>row by row</td>
+<td>12288</td>
+</tr>
+<tr class="odd">
+<td><code>lores4</code></td>
+<td>128x96</td>
+<td>4</td>
+<td>row by row</td>
+<td>6144</td>
+</tr>
+</tbody>
+</table>
+<p><code>320x256</code> and <code>640x256</code> files are the same
+size, so <code>decode</code> takes a 81920-byte file as
+<code>320x256</code> unless <code>-mode 640x256</code> says otherwise.
+An image of another size needs <code>-resize</code>
+(<code>stretch</code>, <code>bestfit</code>, <code>centre</code> or
+<code>fill</code>, as for <code>zx scr encode</code>).</p>
+<p><strong>Timex screens.</strong> <code>timex</code> handles the two
+Timex modes the Next shares: HiRes, 512x192 in one ink colour
+(<code>-ink</code>, 0-7) and its complement as paper, and HiColour,
+256x192 with an attribute for every 8x1 pixels. Both files are 12288
+bytes, the screens at 0x4000 and 0x6000 one after the other (for HiRes,
+the even byte columns and then the odd), so <code>-mode</code> is always
+needed. HiColour encoding chooses each 8x1 span's ink, paper and
+brightness for the least error.</p>
+<p><strong>Tiles.</strong> <code>tiles encode</code> cuts an image into
+tiles (<code>-size</code>, default 8x8) and writes <code>base.nxt</code>
+(the tiles: 8, 4 or 1 bits per pixel, <code>-depth</code>),
+<code>base.nxm</code> (the map) and, with <code>-block WxH</code>,
+<code>base.nxb</code> (blocks of tile indices, the map then holding
+block indices):</p>
+<table>
+<thead>
+<tr class="header">
+<th>Flag</th>
+<th>Meaning (gfx2next's equivalent)</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>-dedup d</code></td>
+<td><code>none</code> keeps every tile; <code>repeat</code> drops
+repeats, <code>mirror</code> also mirrored ones, <code>rotate</code>
+also turned ones; a mirrored or turned match is recorded in the map
+entry's attribute bits (<code>-tile-norepeat</code>,
+<code>-tile-nomirror</code>, <code>-tile-norotate</code>)</td>
+</tr>
+<tr class="even">
+<td><code>-map16</code></td>
+<td>two bytes per map entry: tile index, then the attribute byte
+(palette offset in bits 7-4, X mirror, Y mirror, rotate, index bit 8);
+needed for attributes and for more than 256 tiles
+(<code>-map-16bit</code>)</td>
+</tr>
+<tr class="odd">
+<td><code>-map-columns</code></td>
+<td>write the map column by column (<code>-map-y</code>)</td>
+</tr>
+<tr class="even">
+<td><code>-offset n</code>, <code>-pal-offset n</code></td>
+<td>add n to every tile index; set every entry's palette offset
+(<code>-tile-offset</code>, <code>-tile-pal</code>)</td>
+</tr>
+<tr class="odd">
+<td><code>-block WxH</code>, <code>-block-dedup</code>,
+<code>-block16</code></td>
+<td>blocks of tiles (<code>-block-size</code>,
+<code>-block-norepeat</code>, <code>-block-16bit</code>)</td>
+</tr>
+<tr class="even">
+<td><code>-no-map</code></td>
+<td>write no map</td>
+</tr>
+</tbody>
+</table>
+<p>At 4 bits a tile stores its pixels' low four bits and its map entry's
+palette offset is the high four bits of its last pixel, as gfx2next
+does, so an indexed image drawn in banks of 16 colours keeps its banks.
+<code>tiles decode</code> draws a tile set, or with <code>-map</code>
+(and <code>-map-size</code>, <code>-map16</code>,
+<code>-map-columns</code>, <code>-offset</code> as written) the map
+itself, attributes applied.</p>
+<p><strong>NEX files.</strong> <code>nex info</code> summarises a NEX
+file. <code>nex extract</code> writes its parts to a directory:
+<code>header.json</code>, <code>palette.nxp</code>,
+<code>screen_&lt;kind&gt;.&lt;ext&gt;</code>, <code>copper.bin</code>,
+<code>bank_NNN.bin</code> and <code>after.bin</code>.
+<code>nex build</code> puts a file together:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Flag</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>-header f</code></td>
+<td>start from a <code>header.json</code> written by
+<code>extract</code></td>
+</tr>
+<tr class="even">
+<td><code>-pc a</code>, <code>-sp a</code>,
+<code>-entry-bank n</code></td>
+<td>start address, stack pointer, bank mapped at 0xC000</td>
+</tr>
+<tr class="odd">
+<td><code>-bank N=file</code></td>
+<td>a 16 KB bank (a shorter file is padded with zeros); repeatable</td>
+</tr>
+<tr class="even">
+<td><code>-bin ADDR=file</code></td>
+<td>a file loaded at a 64 KB address, banks 5, 2 and 0 at 0x4000, 0x8000
+and 0xC000; repeatable</td>
+</tr>
+<tr class="odd">
+<td><code>-screen kind=file</code></td>
+<td>loading screen: <code>l2</code>, <code>l2_320</code>,
+<code>l2_640</code>, <code>lores</code>, <code>ula</code>,
+<code>hires</code> or <code>hicolour</code>; repeatable</td>
+</tr>
+<tr class="even">
+<td><code>-palette f</code></td>
+<td>the 512-byte palette for a Layer 2 or LoRes screen</td>
+</tr>
+<tr class="odd">
+<td><code>-border n</code>, <code>-core a.b.c</code>, <code>-2mb</code>,
+<code>-hires-colour n</code></td>
+<td>header fields</td>
+</tr>
+<tr class="even">
+<td><code>-checksum</code>, <code>-copper f</code>,
+<code>-version 3</code></td>
+<td>V1.3 features; the version rises to V1.3 by itself when one is
+used</td>
+</tr>
+<tr class="odd">
+<td><code>-append f</code></td>
+<td>data after the banks</td>
+</tr>
+</tbody>
+</table>
+<p>The layout follows sjasmplus's <code>SAVENEX</code>, and the tests
+rebuild six files sjasmplus wrote, byte for byte. One exception:
+sjasmplus (1.24.0 and earlier) stores the V1.3 checksum of the header as
+it stood when the file was opened, not as written at the end, so its
+checksums do not match their files; <code>nex info</code> says so, and
+<code>nex build</code> writes the checksum of the file it writes.</p>
+<p>The graphics output matches the community tools byte for byte:
+gfx2next for palettes, sprites, Layer 2 bitmaps and tiles, and
+nextbmp/nextraw for Layer 2 and for <code>-round floor</code> and
+<code>ceil</code>. (In those two modes gfx2next reduces a palette colour
+twice, moving it a further step; <code>zx next</code> reduces once, as
+nextbmp does.)</p>
+<pre><code>zx next sprite encode hero.png -o hero.spr -palette hero.nxp
+zx next sprite decode hero.spr -palette hero.nxp -transparent 0xE3 -o check.png
+zx next bitmap encode title.jpg -mode 320x256 -resize fill -dither fs -o title.nxi -palette title.nxp
+zx next tiles encode level.png -dedup rotate -map16 -o level -palette level.nxp
+zx next nex build -bin 0x8000=game.bin -pc 0x8000 -sp 0xFF00 -screen l2_320=title.nxi -palette title.nxp -o game.nex</code></pre>
+<h3 id="zx-zx0">zx zx0</h3>
+<pre><code>zx zx0 [-d] [-classic] [-back] [-quick] [-o out] &lt;file&gt;</code></pre>
+<p>Compresses (or with <code>-d</code> decompresses) a file in Einar
+Saukas's ZX0 format, which the Next tools and many Spectrum programs
+use. The compressor is a port of the reference one, with the same
+optimal parse, so its bytes are the same as <code>zx0</code>'s.
+<code>-classic</code> writes the v1 format (<code>zx0 -c</code>), which
+gfx2next writes; <code>-back</code> compresses backwards for in-place
+decompression from the end (<code>zx0 -b</code>); <code>-quick</code>
+searches offsets up to 2176 only (<code>zx0 -q</code>), faster but
+compressing less. The output defaults to the input with
+<code>.zx0</code> added (or removed, with <code>-d</code>). Compression
+takes time in proportion to the file's length times the offsets searched
+(up to 32640): about 3 seconds for 13 KB on an ordinary machine, 45
+seconds for an 80 KB Layer 2 screen, and much less with
+<code>-quick</code>.</p>
 <h3 id="zx-snap">zx snap</h3>
 <pre><code>zx snap make &lt;input.bin&gt; --start &lt;addr&gt; [--origin &lt;addr&gt;] [--sp &lt;addr&gt;] [--model &lt;name&gt;] [--sna] [--z80] -o &lt;basename&gt;
 zx snap info &lt;file.sna|file.z80&gt;</code></pre>
@@ -694,15 +1462,15 @@ zx edit import game2.tap --data newlevel.bin --name LEVEL2 --org 0xC000 -o game3
 declarative counterpart to <code>zx edit</code>'s incremental
 list/import/delete, for describing a whole tape's contents at once
 rather than one change at a time.</p>
-<div class="sourceCode" id="cb25"><pre
-class="sourceCode json"><code class="sourceCode json"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
-<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;title&quot;</span><span class="fu">:</span> <span class="st">&quot;optional, pzx target only&quot;</span><span class="fu">,</span></span>
-<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;blocks&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
-<span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">&quot;kind&quot;</span><span class="fu">:</span> <span class="st">&quot;code&quot;</span><span class="fu">,</span> <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;LOADER&quot;</span><span class="fu">,</span> <span class="dt">&quot;org&quot;</span><span class="fu">:</span> <span class="dv">32768</span><span class="fu">,</span> <span class="dt">&quot;file&quot;</span><span class="fu">:</span> <span class="st">&quot;loader.bin&quot;</span><span class="fu">}</span><span class="ot">,</span></span>
-<span id="cb25-5"><a href="#cb25-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">&quot;kind&quot;</span><span class="fu">:</span> <span class="st">&quot;program&quot;</span><span class="fu">,</span> <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;BASIC&quot;</span><span class="fu">,</span> <span class="dt">&quot;autostart&quot;</span><span class="fu">:</span> <span class="dv">10</span><span class="fu">,</span> <span class="dt">&quot;file&quot;</span><span class="fu">:</span> <span class="st">&quot;basic.bin&quot;</span><span class="fu">}</span><span class="ot">,</span></span>
-<span id="cb25-6"><a href="#cb25-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">&quot;kind&quot;</span><span class="fu">:</span> <span class="st">&quot;raw&quot;</span><span class="fu">,</span> <span class="dt">&quot;file&quot;</span><span class="fu">:</span> <span class="st">&quot;already_encoded_block.bin&quot;</span><span class="fu">}</span></span>
-<span id="cb25-7"><a href="#cb25-7" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
-<span id="cb25-8"><a href="#cb25-8" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<div class="sourceCode" id="cb31"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;title&quot;</span><span class="fu">:</span> <span class="st">&quot;optional, pzx target only&quot;</span><span class="fu">,</span></span>
+<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;blocks&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb31-4"><a href="#cb31-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">&quot;kind&quot;</span><span class="fu">:</span> <span class="st">&quot;code&quot;</span><span class="fu">,</span> <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;LOADER&quot;</span><span class="fu">,</span> <span class="dt">&quot;org&quot;</span><span class="fu">:</span> <span class="dv">32768</span><span class="fu">,</span> <span class="dt">&quot;file&quot;</span><span class="fu">:</span> <span class="st">&quot;loader.bin&quot;</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb31-5"><a href="#cb31-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">&quot;kind&quot;</span><span class="fu">:</span> <span class="st">&quot;program&quot;</span><span class="fu">,</span> <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;BASIC&quot;</span><span class="fu">,</span> <span class="dt">&quot;autostart&quot;</span><span class="fu">:</span> <span class="dv">10</span><span class="fu">,</span> <span class="dt">&quot;file&quot;</span><span class="fu">:</span> <span class="st">&quot;basic.bin&quot;</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb31-6"><a href="#cb31-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span><span class="dt">&quot;kind&quot;</span><span class="fu">:</span> <span class="st">&quot;raw&quot;</span><span class="fu">,</span> <span class="dt">&quot;file&quot;</span><span class="fu">:</span> <span class="st">&quot;already_encoded_block.bin&quot;</span><span class="fu">}</span></span>
+<span id="cb31-7"><a href="#cb31-7" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb31-8"><a href="#cb31-8" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
 <p>Each block's <code>"file"</code> path resolves relative to the
 <em>spec file's own directory</em>, not the current working directory,
 so a spec and its data files can be moved together as a unit.
@@ -719,11 +1487,15 @@ example assembling a complex multi-block tape from a spec like this
 one.</p>
 <h3 id="zx-info">zx info</h3>
 <pre><code>zx info &lt;file&gt;</code></pre>
-<p>Identifies a file's format — by signature (TZX, SZX, PZX, and RZX all
-have one) where possible, otherwise by extension — and prints the
+<p>Identifies a file's format — by signature (TZX, SZX, PZX, RZX and NEX
+all have one) where possible, otherwise by extension — and prints the
 appropriate summary, as <code>zx tap info</code>,
 <code>zx tzx info</code>, <code>zx pzx info</code>,
-<code>zx snap info</code>, or <code>zx rzx info</code> would.</p>
+<code>zx snap info</code>, <code>zx rzx info</code>,
+<code>zx next nex info</code>, <code>zx next palette info</code>
+(<code>.nxp</code>), <code>zx next sprite info</code>
+(<code>.spr</code>) or <code>zx next bitmap info</code>
+(<code>.nxi</code>, <code>.sl2</code>, <code>.slr</code>) would.</p>
 <h2 id="conversions-in-depth">Conversions in depth</h2>
 <p><code>zx convert</code> spans the format matrix below. The two axes
 are the source format (rows) and the target format (columns); a source

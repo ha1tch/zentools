@@ -19,8 +19,10 @@
 *.tap
 *.tzx
 *.bin
+!/pkg/zx0/testdata/*.bin
 *.test
 
 # Editor / OS
 .DS_Store
 *.swp
+.ed-journal.json

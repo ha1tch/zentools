@@ -1,0 +1,9 @@
+	INCLUDE "common.i"
+	FILLBANK 5
+	FILLBANK 1
+	ORG $8000
+start:	jr start
+	SAVENEX OPEN "scr_ula.nex", start
+	SAVENEX SCREEN SCR
+	SAVENEX BANK 1
+	SAVENEX CLOSE

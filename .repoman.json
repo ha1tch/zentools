@@ -1,5 +1,9 @@
 {
   "version_file": "VERSION",
+  "changelog": "CHANGELOG.md",
+  "register": "docs/TRACKING.md",
+  "resolved": "docs/RESOLVED.md",
+  "id_prefix": "T",
   "version_targets": [
     {
       "file": "pkg/version/version.go",

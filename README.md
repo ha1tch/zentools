@@ -5,8 +5,9 @@
 
 A Go library and command-line toolkit for converting and manipulating ZX
 Spectrum file formats: TAP, TZX, PZX, snapshots (`.sna`, `.z80`, `.szx`),
-RZX input recordings, BASIC, and `.scr` screens. No third-party
-dependencies.
+RZX input recordings, BASIC, `.scr` screens and `.cut` asset collections,
+the ZXMODE screen modes and ZXPAL palettes, and the Spectrum Next's
+graphics and NEX files. No third-party dependencies.
 
 - **[CLI tools manual](docs/CLI.md)** — every command and flag, with the
   conversion table and what each conversion costs.
@@ -14,17 +15,38 @@ dependencies.
   and editing multi-block tapes, with a full worked tutorial.
 - **[Sprite handling manual](docs/SPRITE-HANDLING.md)** — screens, tiles,
   and sprite collections, with a tutorial using real ZX Spectrum artwork.
+- **[ZXMODE handling manual](docs/ZXMODE-HANDLING.md)** — the ZXMODE
+  screen modes and ZXPAL palettes: fitting and encoding pictures,
+  measuring them, loaded registers, assets across palettes and palette
+  design.
+- **[Next handling manual](docs/NEXT-HANDLING.md)** — Spectrum Next
+  palettes, sprites and their attributes, Layer 2, LoRes and Timex
+  screens, tiles and tilemaps, ZX0 compression and NEX files, worked
+  through for a small game.
 - **[Library manual](docs/LIBRARY.md)** — packages, types, and examples.
 
 Beyond tape and snapshot conversion, `zx scr` covers the whole screen and
 sprite side: `encode`/`decode` convert between ordinary images and the
 native 6912-byte `.scr` format, `crop` pulls out a region as PNG, and
 `fromsnap` extracts a display straight out of a snapshot. `cut`, `paste`,
-`ls`, and `atlas` manage `.cut` files — named collections of extracted
-sprites and tiles, pulled from one or more screens, meant for reuse
-across a project. `ocr` recognises the text on a screen against the real
-Spectrum ROM font and prints it as plain text, for driving emulators
+`ls`, `atlas`, `flip` and `convert` manage `.cut` files — named collections
+of extracted sprites and tiles, pulled from one or more screens in any
+palette, meant for reuse across a project. The same commands handle the
+ZXMODE linear screens (`.zm1`, `.zm2`) and ZXPAL palettes. For those,
+`encode` is the specification's reference encoder, pixel for pixel, and
+`fit` and `compare -metric` reproduce its picture fit and error measures
+exactly. Loaded palette registers, conversion between palettes, error
+diffusion, and tools for trying palette designs (`-banks`, `-cell`,
+`fitregs`) go further. `ocr` recognises the text on a screen against the
+real Spectrum ROM font and prints it as plain text, for driving emulators
 through captured screenshots without a human reading each one by eye.
+
+For the Spectrum Next, `zx next` turns images into palettes, hardware
+sprites, Layer 2 and LoRes screens, Timex screens, and tiles with their
+tilemaps, choosing colours when an image has too many, and draws them all
+back to PNG; it also inspects, unpacks and builds NEX files. Its output
+matches gfx2next, nextbmp, nextraw and sjasmplus byte for byte. `zx zx0`
+compresses with ZX0, as the reference compressor does.
 
 ## Tools
 
@@ -42,7 +64,9 @@ Full flag reference for all four is in the [CLI tools manual](docs/CLI.md).
 | `zx tzx`     | make and inspect TZX images                                |
 | `zx pzx`     | make (from a TAP) and inspect PZX images                   |
 | `zx basic`   | tokenise and detokenise ZX BASIC                           |
-| `zx scr`     | convert, crop, and manage `.scr` screens and sprite/asset collections; recognise on-screen text |
+| `zx scr`     | convert, crop, and manage `.scr` screens and sprite/asset collections; ZXMODE pictures and ZXPAL palettes; recognise on-screen text |
+| `zx next`    | ZX Spectrum Next graphics and programs: palettes, sprites and their attributes, Layer 2, LoRes and Timex screens, tiles and tilemaps from images (with colour reduction), drawn back to PNG; NEX files inspected, unpacked and built |
+| `zx zx0`     | ZX0 compression and decompression, byte for byte as the reference compressor |
 | `zx snap`    | build a runnable snapshot (`.sna`/`.z80`/`.szx`) from a binary, or inspect one |
 | `zx rzx`     | inspect RZX input-recording files                          |
 | `zx convert` | convert between tape/snapshot formats, and extract a flat `.bin` payload from either |
@@ -167,8 +191,9 @@ zx build game.json -o game.tzx
 
 `zx edit`/`zx build` operate on a tape's flat *logical* block list -- the loadable header/data blocks themselves, the same list `zx convert`'s own tape normalisation already works with. A TZX's structural blocks (pauses, group markers, `STOP`) and a PZX's own `PAUS`/`BRWS`/`STOP` blocks aren't part of that list and don't survive a `delete`/`import`/`build` round trip -- the same scope boundary `zx convert` already has converting a tape to another tape format.
 
-```
+Screens, pictures and the Spectrum Next:
 
+```
 # identify any file
 zx info game.tzx
 
@@ -188,6 +213,19 @@ zx scr atlas parts.cut --scale 4 -o parts-atlas.png
 # composite an asset back onto a screen (AND a mask, then OR the data)
 zx scr paste parts.cut:mask --at 96,80 --op and screen.scr -o tmp.scr
 zx scr paste parts.cut:data --at 96,80 --op or  tmp.scr    -o out.scr
+
+# ZXMODE: fit a photograph as the specification does, encode it in ZXPAL4,
+# and measure the result with the specification's error
+zx scr fit photo.jpg --resize fill --filter lanczos -o photo-fit.png
+zx scr encode photo-fit.png --mode zxmode2 --palette zxpal4 -o photo.zm2
+zx scr compare --metric blur photo-fit.png photo.zm2 --palette zxpal4
+
+# Spectrum Next: a Layer 2 screen with its palette, a deduplicated sprite
+# sheet, and a NEX file with the screen as its loading screen
+zx next bitmap encode title.png --mode 320x256 -o title.nxi --palette title.nxp
+zx next sprite encode sprites.png --dedup --transparent 0xE3 -o sprites.spr --palette sprites.nxp
+zx next nex build --bin 0x8000=game.bin --pc 0x8000 --screen l2_320=title.nxi --palette title.nxp -o game.nex
+zx zx0 title.nxi
 ```
 
 Flags may appear in any position. See the **[CLI tools manual](docs/CLI.md)** for
@@ -206,8 +244,8 @@ VERSION=x.y.z`, `make cross-build`; run `make help` for the full list.
 
 ## Library
 
-Ten packages, each owning one format family, depending only on the standard
-library:
+Fourteen packages, each owning one format family, depending only on the
+standard library:
 
 | Package        | Does                                                  |
 | -------------- | ---------------------------------------------------- |
@@ -219,7 +257,11 @@ library:
 | `pkg/szx`      | read and write `.szx` (zx-state) via the same neutral state |
 | `pkg/rzx`      | read and write `.rzx` input-recording files          |
 | `pkg/build`    | overlay code onto a boot state, emit tapes/snapshots |
-| `pkg/scr`      | read/write `.scr` screens and `.cut` asset collections |
+| `pkg/scr`      | `.scr` screens, ZXMODE pictures and ZXPAL palettes, image conversion and fitting, `.cut` asset collections, OCR |
+| `pkg/zxn`      | Spectrum Next palettes, sprites, Layer 2, LoRes, Timex screens and tiles |
+| `pkg/nex`      | read and write NEX files                             |
+| `pkg/zx0`      | ZX0 compression and decompression                    |
+| `pkg/bdf`      | read BDF bitmap fonts (the ROM font for `pkg/scr`'s OCR) |
 | `pkg/version`  | the library version constant                         |
 
 `pkg/szx` decodes into and encodes from the same `snapshot.MachineState`
@@ -247,6 +289,8 @@ See the **[library manual](docs/LIBRARY.md)** for the API and examples.
 - **[CLI tools manual](docs/CLI.md)**
 - **[Tape handling manual](docs/TAPE-HANDLING.md)**
 - **[Sprite handling manual](docs/SPRITE-HANDLING.md)**
+- **[ZXMODE handling manual](docs/ZXMODE-HANDLING.md)**
+- **[Next handling manual](docs/NEXT-HANDLING.md)**
 - **[Library manual](docs/LIBRARY.md)**
 - **[Architecture](docs/ARCHITECTURE.md)**
 

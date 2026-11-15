@@ -8,16 +8,19 @@
 // to the nearer of the two.
 //
 // Input decoding uses the standard library only: PNG, JPEG, and GIF are
-// recognised because their decoders are registered as blank imports below, so a
-// single image.Decode call accepts any of the three.
+// recognised because their decoders are registered as blank imports below,
+// and uncompressed BMP because bmp.go registers its own decoder, so a single
+// image.Decode call accepts any of the four.
 
 package scr
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
 	"io"
+	"strings"
 
 	_ "image/gif"  // register GIF decoder for image.Decode
 	_ "image/jpeg" // register JPEG decoder for image.Decode
@@ -93,6 +96,12 @@ func classify(c rgb, legal []legalColour) legalColour {
 // resize an image before conversion.
 func DecodeImage(r io.Reader) (image.Image, error) {
 	img, _, err := image.Decode(r)
+	if m, ok := img.(*image.YCbCr); ok && err == nil {
+		// A colour JPEG: rebuild its RGB as libjpeg-turbo does (jpeg.go).
+		if out := fancyRGB(m); out != nil {
+			return out, nil
+		}
+	}
 	return img, err
 }
 
@@ -112,30 +121,103 @@ const (
 	// ResizeCentre does not scale: it centres the source on the screen, cropping
 	// any overflow and padding any shortfall with fill.
 	ResizeCentre
+	// ResizeFill scales to cover the whole screen preserving aspect ratio and
+	// crops the overflow equally from both sides, so nothing is padded. When it
+	// shrinks the source it averages every source pixel under each target pixel
+	// (an area filter) rather than sampling, so photographs do not alias.
+	ResizeFill
 )
 
-// Fit returns a 256x192 image produced from src according to mode. The fill
+// Fit returns a 256x192 image produced from src according to mode; it is
+// FitTo at the classic screen size.
+func Fit(src image.Image, mode ResizeMode, fill color.Color) (image.Image, error) {
+	return FitTo(src, mode, fill, Width, Height)
+}
+
+// FitTo returns a w x h image produced from src according to mode. The fill
 // colour is used for padding in ResizeBestFit and ResizeCentre (it has no effect
 // on ResizeStretch, which leaves no border). ResizeNone returns src unchanged
-// when it is already 256x192 and a *SizeError otherwise.
+// when it is already w x h and a *SizeError otherwise.
 //
 // The scaler used for ResizeStretch and ResizeBestFit is a simple bilinear
-// resample. That is deliberate: the conversion that follows collapses every 8x8
-// cell to two colours, so a higher-order resampler's extra fidelity would be
-// destroyed by the attribute reduction and is not worth a dependency.
-func Fit(src image.Image, mode ResizeMode, fill color.Color) (image.Image, error) {
+// resample, and ResizeFill shrinks with an area filter; FitToWith can use
+// Lanczos instead.
+func FitTo(src image.Image, mode ResizeMode, fill color.Color, w, h int) (image.Image, error) {
+	return FitToWith(src, mode, fill, w, h, FitOptions{})
+}
+
+// Filter selects the resampler FitToWith scales with.
+type Filter int
+
+const (
+	// FilterDefault is bilinear for stretch and best fit, and an area
+	// filter when fill shrinks the source.
+	FilterDefault Filter = iota
+	// FilterLanczos is Pillow's Lanczos resampler (ResizeLanczos); with
+	// ResizeFill it is the ZXMODE specification's picture fit (FitLanczos).
+	FilterLanczos
+)
+
+// FitOptions refine FitToWith.
+type FitOptions struct {
+	Filter Filter
+	// Trim removes this many pixels from every edge of the source first.
+	Trim int
+	// With Centre set, CentreX and CentreY place the crop of ResizeFill: 0
+	// keeps the left or top edge, 1 the right or bottom, 0.5 centres it.
+	// Without it the crop is centred.
+	Centre           bool
+	CentreX, CentreY float64
+}
+
+// ParseFilter accepts "default" (or "") and "lanczos".
+func ParseFilter(s string) (Filter, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "default", "area", "bilinear":
+		return FilterDefault, nil
+	case "lanczos":
+		return FilterLanczos, nil
+	}
+	return FilterDefault, fmt.Errorf("unknown filter %q: use default or lanczos", s)
+}
+
+// FitToWith is FitTo with a choice of resampler, a trim and a crop position.
+func FitToWith(src image.Image, mode ResizeMode, fill color.Color, w, h int, opt FitOptions) (image.Image, error) {
+	if opt.Trim != 0 {
+		t, err := Trim(src, opt.Trim)
+		if err != nil {
+			return nil, err
+		}
+		src = t
+	}
+	cxf, cyf := 0.5, 0.5
+	if opt.Centre {
+		cxf, cyf = opt.CentreX, opt.CentreY
+	}
 	b := src.Bounds()
 	sw, sh := b.Dx(), b.Dy()
 
 	if mode == ResizeNone {
-		if sw != Width || sh != Height {
-			return nil, &SizeError{Got: image.Pt(sw, sh)}
+		if sw != w || sh != h {
+			return nil, &SizeError{Got: image.Pt(sw, sh), Want: image.Pt(w, h)}
 		}
 		return src, nil
 	}
 
-	canvas := image.NewRGBA(image.Rect(0, 0, Width, Height))
+	if fill == nil {
+		fill = color.Black
+	}
+	canvas := image.NewRGBA(image.Rect(0, 0, w, h))
 	draw.Draw(canvas, canvas.Bounds(), image.NewUniform(fill), image.Point{}, draw.Src)
+
+	if opt.Filter == FilterLanczos {
+		switch mode {
+		case ResizeFill:
+			return FitLanczos(src, w, h, cxf, cyf)
+		case ResizeStretch:
+			return ResizeLanczos(src, w, h, [4]float64{0, 0, float64(sw), float64(sh)})
+		}
+	}
 
 	switch mode {
 	case ResizeStretch:
@@ -143,8 +225,8 @@ func Fit(src image.Image, mode ResizeMode, fill color.Color) (image.Image, error
 
 	case ResizeBestFit:
 		// Largest scale that fits both dimensions, preserving aspect.
-		scale := float64(Width) / float64(sw)
-		if s := float64(Height) / float64(sh); s < scale {
+		scale := float64(w) / float64(sw)
+		if s := float64(h) / float64(sh); s < scale {
 			scale = s
 		}
 		dw := int(float64(sw) * scale)
@@ -155,21 +237,114 @@ func Fit(src image.Image, mode ResizeMode, fill color.Color) (image.Image, error
 		if dh < 1 {
 			dh = 1
 		}
-		dst := image.Rect(0, 0, dw, dh).Add(image.Pt((Width-dw)/2, (Height-dh)/2))
-		bilinear(canvas, dst, src)
+		dst := image.Rect(0, 0, dw, dh).Add(image.Pt((w-dw)/2, (h-dh)/2))
+		if opt.Filter == FilterLanczos {
+			scaled, err := ResizeLanczos(src, dw, dh, [4]float64{0, 0, float64(sw), float64(sh)})
+			if err != nil {
+				return nil, err
+			}
+			draw.Draw(canvas, dst, scaled, image.Point{}, draw.Src)
+		} else {
+			bilinear(canvas, dst, src)
+		}
+
+	case ResizeFill:
+		// Crop the source to the target's aspect ratio, centred, then scale.
+		cw, ch := sw, sh
+		if sw*h > sh*w {
+			cw = (sh*w + h/2) / h
+		} else {
+			ch = (sw*h + w/2) / w
+		}
+		crop := image.Rect(0, 0, cw, ch).Add(b.Min).Add(image.Pt(int(float64(sw-cw)*cxf), int(float64(sh-ch)*cyf)))
+		sub := subImage(src, crop)
+		if cw > w || ch > h {
+			areaResample(canvas, canvas.Bounds(), sub)
+		} else {
+			bilinear(canvas, canvas.Bounds(), sub)
+		}
 
 	case ResizeCentre:
 		// No scaling: copy src 1:1, centred. Overflow is cropped, shortfall is
 		// already painted with fill above.
-		off := image.Pt((Width-sw)/2, (Height-sh)/2)
+		off := image.Pt((w-sw)/2, (h-sh)/2)
 		dst := b.Add(off.Sub(b.Min))
 		draw.Draw(canvas, dst, src, b.Min, draw.Src)
 
 	default:
-		return nil, &SizeError{Got: image.Pt(sw, sh)}
+		return nil, &SizeError{Got: image.Pt(sw, sh), Want: image.Pt(w, h)}
 	}
 
 	return canvas, nil
+}
+
+// subImage returns the part of src inside r, sharing its pixels where src
+// supports it and copying them otherwise.
+func subImage(src image.Image, r image.Rectangle) image.Image {
+	if s, ok := src.(interface {
+		SubImage(image.Rectangle) image.Image
+	}); ok {
+		return s.SubImage(r)
+	}
+	out := image.NewRGBA(r)
+	draw.Draw(out, r, src, r.Min, draw.Src)
+	return out
+}
+
+// areaResample shrinks src into the rectangle dst within dstImg, each target
+// pixel taking the average of the source area it covers, partial source
+// pixels weighted by their coverage.
+func areaResample(dstImg *image.RGBA, dst image.Rectangle, src image.Image) {
+	sb := src.Bounds()
+	sw, sh := sb.Dx(), sb.Dy()
+	dw, dh := dst.Dx(), dst.Dy()
+	if dw == 0 || dh == 0 || sw == 0 || sh == 0 {
+		return
+	}
+	px := make([][3]float64, sw*sh)
+	for y := 0; y < sh; y++ {
+		for x := 0; x < sw; x++ {
+			px[y*sw+x] = rgbaOf(src, sb.Min.X+x, sb.Min.Y+y)
+		}
+	}
+	sx, sy := float64(sw)/float64(dw), float64(sh)/float64(dh)
+	for dy := 0; dy < dh; dy++ {
+		y0, y1 := float64(dy)*sy, float64(dy+1)*sy
+		for dx := 0; dx < dw; dx++ {
+			x0, x1 := float64(dx)*sx, float64(dx+1)*sx
+			var acc [3]float64
+			var wsum float64
+			for y := int(y0); y < sh && float64(y) < y1; y++ {
+				wy := minf(y1, float64(y+1)) - maxf(y0, float64(y))
+				for x := int(x0); x < sw && float64(x) < x1; x++ {
+					wgt := wy * (minf(x1, float64(x+1)) - maxf(x0, float64(x)))
+					c := px[y*sw+x]
+					acc[0] += c[0] * wgt
+					acc[1] += c[1] * wgt
+					acc[2] += c[2] * wgt
+					wsum += wgt
+				}
+			}
+			dstImg.SetRGBA(dst.Min.X+dx, dst.Min.Y+dy, color.RGBA{
+				uint8(clampi(int(acc[0]/wsum+0.5), 0, 255)),
+				uint8(clampi(int(acc[1]/wsum+0.5), 0, 255)),
+				uint8(clampi(int(acc[2]/wsum+0.5), 0, 255)), 0xFF})
+		}
+	}
+}
+
+func minf(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxf(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // bilinear resamples src into the rectangle dst within dstImg using bilinear
@@ -433,12 +608,34 @@ func rgba8(c color.Color) (r, g, b, a uint8) {
 }
 
 // AssetToImage renders an asset to an RGBA image at its own dimensions. An
-// attributed asset is drawn in its stored colours (ink on paper). A bitmap-only
+// attributed asset is drawn in its stored colours (ink on paper), in its
+// palette (an asset in a palette other than ZXPAL0 is drawn with flash in its
+// first phase). A bitmap-only
 // asset is drawn with the supplied ink and paper; if paperTransparent is true,
 // its unset pixels are left fully transparent so it can be composited. The ink
 // and paper arguments are ignored for an attributed asset.
 func AssetToImage(a *Asset, ink, paper color.Color, paperTransparent bool) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, a.Width, a.Height))
+	if a.HasAttrs() && (a.Palette != ZXPAL0 || a.Registers != nil) {
+		regs := a.Registers.Or(a.Palette)
+		for y := 0; y < a.Height; y++ {
+			for x := 0; x < a.Width; x++ {
+				var c CellAttr
+				if a.Attr2 != nil {
+					c = a.Attr2[y/8][x/8]
+				} else {
+					c = CellAttr{A: a.Attr[y/8][x/8].Byte()}
+				}
+				ink, paper := a.Palette.CellRegisters(c.A, c.B, false)
+				if a.Ink[y][x] {
+					img.SetRGBA(x, y, regs[ink])
+				} else {
+					img.SetRGBA(x, y, regs[paper])
+				}
+			}
+		}
+		return img
+	}
 	if a.HasAttrs() {
 		for y := 0; y < a.Height; y++ {
 			for x := 0; x < a.Width; x++ {

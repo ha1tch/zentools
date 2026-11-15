@@ -1,0 +1,8 @@
+	INCLUDE "common.i"
+	FILLBANK 5
+	ORG $8000
+start:	jr start
+	SAVENEX OPEN "shr.nex", start, 0, 0, 3
+	SAVENEX SCREEN SHR 5
+	SAVENEX BANK 5
+	SAVENEX CLOSE

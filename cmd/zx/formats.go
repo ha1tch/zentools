@@ -376,6 +376,18 @@ func cmdInfo(args []string) error {
 		return pzxInfo(args)
 	case "rzx":
 		return rzxInfo(args)
+	case "nex":
+		return nextNexInfo(args)
+	case "nxp":
+		return nextPaletteInfo(args)
+	case "spr":
+		return nextSpriteInfo(args)
+	case "nxi":
+		return nextBitmapInfo(args)
+	case "zxmode":
+		return zxmodeInfo(args)
+	case "cut":
+		return scrLs(args)
 	default:
 		return fmt.Errorf("could not identify the format of %s", path)
 	}
@@ -395,6 +407,9 @@ func detectFormat(path string, data []byte) string {
 	if len(data) >= 4 && string(data[:4]) == "RZX!" {
 		return "rzx"
 	}
+	if len(data) >= 512 && string(data[:6]) == "NextV1" {
+		return "nex"
+	}
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".tzx":
 		return "tzx"
@@ -406,6 +421,18 @@ func detectFormat(path string, data []byte) string {
 		return "pzx"
 	case ".rzx":
 		return "rzx"
+	case ".nex":
+		return "nex"
+	case ".nxp":
+		return "nxp"
+	case ".spr":
+		return "spr"
+	case ".nxi", ".sl2", ".slr":
+		return "nxi"
+	case ".zm1", ".zm2":
+		return "zxmode"
+	case ".cut":
+		return "cut"
 	}
 	return ""
 }

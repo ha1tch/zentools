@@ -1,0 +1,113 @@
+slot,group,colour,hex,r,g,b
+0,zxpal3 level 0,grey 0,000000,0,0,0
+1,zxpal3 level 0,grey 1,151515,21,21,21
+2,zxpal3 level 0,grey 2,2a2a2a,42,42,42
+3,zxpal3 level 0,grey 3,404040,64,64,64
+4,zxpal3 level 0,red,400000,64,0,0
+5,zxpal3 level 0,orange,402000,64,32,0
+6,zxpal3 level 0,yellow,404000,64,64,0
+7,zxpal3 level 0,chartreuse,204000,32,64,0
+8,zxpal3 level 0,green,004000,0,64,0
+9,zxpal3 level 0,spring,004020,0,64,32
+10,zxpal3 level 0,cyan,004040,0,64,64
+11,zxpal3 level 0,azure,002040,0,32,64
+12,zxpal3 level 0,blue,000040,0,0,64
+13,zxpal3 level 0,violet,200040,32,0,64
+14,zxpal3 level 0,magenta,400040,64,0,64
+15,zxpal3 level 0,rose,400020,64,0,32
+16,zxpal3 level 1,grey 0,000000,0,0,0
+17,zxpal3 level 1,grey 1,2a2a2a,42,42,42
+18,zxpal3 level 1,grey 2,555555,85,85,85
+19,zxpal3 level 1,grey 3,808080,128,128,128
+20,zxpal3 level 1,red,800000,128,0,0
+21,zxpal3 level 1,orange,804000,128,64,0
+22,zxpal3 level 1,yellow,808000,128,128,0
+23,zxpal3 level 1,chartreuse,408000,64,128,0
+24,zxpal3 level 1,green,008000,0,128,0
+25,zxpal3 level 1,spring,008040,0,128,64
+26,zxpal3 level 1,cyan,008080,0,128,128
+27,zxpal3 level 1,azure,004080,0,64,128
+28,zxpal3 level 1,blue,000080,0,0,128
+29,zxpal3 level 1,violet,400080,64,0,128
+30,zxpal3 level 1,magenta,800080,128,0,128
+31,zxpal3 level 1,rose,800040,128,0,64
+32,zxpal3 level 2,grey 0,000000,0,0,0
+33,zxpal3 level 2,grey 1,3f3f3f,63,63,63
+34,zxpal3 level 2,grey 2,7f7f7f,127,127,127
+35,zxpal3 level 2,grey 3,bfbfbf,191,191,191
+36,zxpal3 level 2,red,bf0000,191,0,0
+37,zxpal3 level 2,orange,bf5f00,191,95,0
+38,zxpal3 level 2,yellow,bfbf00,191,191,0
+39,zxpal3 level 2,chartreuse,5fbf00,95,191,0
+40,zxpal3 level 2,green,00bf00,0,191,0
+41,zxpal3 level 2,spring,00bf5f,0,191,95
+42,zxpal3 level 2,cyan,00bfbf,0,191,191
+43,zxpal3 level 2,azure,005fbf,0,95,191
+44,zxpal3 level 2,blue,0000bf,0,0,191
+45,zxpal3 level 2,violet,5f00bf,95,0,191
+46,zxpal3 level 2,magenta,bf00bf,191,0,191
+47,zxpal3 level 2,rose,bf005f,191,0,95
+48,zxpal3 level 3,grey 0,000000,0,0,0
+49,zxpal3 level 3,grey 1,555555,85,85,85
+50,zxpal3 level 3,grey 2,aaaaaa,170,170,170
+51,zxpal3 level 3,grey 3,ffffff,255,255,255
+52,zxpal3 level 3,red,ff0000,255,0,0
+53,zxpal3 level 3,orange,ff8000,255,128,0
+54,zxpal3 level 3,yellow,ffff00,255,255,0
+55,zxpal3 level 3,chartreuse,80ff00,128,255,0
+56,zxpal3 level 3,green,00ff00,0,255,0
+57,zxpal3 level 3,spring,00ff80,0,255,128
+58,zxpal3 level 3,cyan,00ffff,0,255,255
+59,zxpal3 level 3,azure,0080ff,0,128,255
+60,zxpal3 level 3,blue,0000ff,0,0,255
+61,zxpal3 level 3,violet,8000ff,128,0,255
+62,zxpal3 level 3,magenta,ff00ff,255,0,255
+63,zxpal3 level 3,rose,ff0080,255,0,128
+64,tone 1,red,c73838,199,56,56
+65,tone 1,orange,c78038,199,128,56
+66,tone 1,yellow,c7c738,199,199,56
+67,tone 1,chartreuse,80c738,128,199,56
+68,tone 1,green,38c738,56,199,56
+69,tone 1,spring,38c780,56,199,128
+70,tone 1,cyan,38c7c7,56,199,199
+71,tone 1,azure,3880c7,56,128,199
+72,tone 1,blue,3838c7,56,56,199
+73,tone 1,violet,8038c7,128,56,199
+74,tone 1,magenta,c738c7,199,56,199
+75,tone 1,rose,c73880,199,56,128
+76,tone 2,red,9f6161,159,97,97
+77,tone 2,orange,9f8061,159,128,97
+78,tone 2,yellow,9f9f61,159,159,97
+79,tone 2,chartreuse,809f61,128,159,97
+80,tone 2,green,619f61,97,159,97
+81,tone 2,spring,619f80,97,159,128
+82,tone 2,cyan,619f9f,97,159,159
+83,tone 2,azure,61809f,97,128,159
+84,tone 2,blue,61619f,97,97,159
+85,tone 2,violet,80619f,128,97,159
+86,tone 2,magenta,9f619f,159,97,159
+87,tone 2,rose,9f6180,159,97,128
+88,tint of tone 1,red,d56a6a,213,106,106
+89,tint of tone 1,orange,d5a06a,213,160,106
+90,tint of tone 1,yellow,d5d56a,213,213,106
+91,tint of tone 1,chartreuse,a0d56a,160,213,106
+92,tint of tone 1,green,6ad56a,106,213,106
+93,tint of tone 1,spring,6ad5a0,106,213,160
+94,tint of tone 1,cyan,6ad5d5,106,213,213
+95,tint of tone 1,azure,6aa0d5,106,160,213
+96,tint of tone 1,blue,6a6ad5,106,106,213
+97,tint of tone 1,violet,a06ad5,160,106,213
+98,tint of tone 1,magenta,d56ad5,213,106,213
+99,tint of tone 1,rose,d56aa0,213,106,160
+100,shade of tone 1,red,702020,112,32,32
+101,shade of tone 1,orange,704820,112,72,32
+102,shade of tone 1,yellow,707020,112,112,32
+103,shade of tone 1,chartreuse,487020,72,112,32
+104,shade of tone 1,green,207020,32,112,32
+105,shade of tone 1,spring,207048,32,112,72
+106,shade of tone 1,cyan,207070,32,112,112
+107,shade of tone 1,azure,204870,32,72,112
+108,shade of tone 1,blue,202070,32,32,112
+109,shade of tone 1,violet,482070,72,32,112
+110,shade of tone 1,magenta,702070,112,32,112
+111,shade of tone 1,rose,702048,112,32,72

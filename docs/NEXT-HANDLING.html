@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NEXT HANDLING manual — zentools</title>
+<link rel="stylesheet" href="zsp.css">
+</head>
+<body>
+<div class="zsp-border">
+<div class="zsp-page">
+<div class="zsp-nav">
+<a href="CLI.html">CLI manual</a><a href="TAPE-HANDLING.html">Tape handling</a><a href="SPRITE-HANDLING.html">Sprite handling</a><a href="ZXMODE-HANDLING.html">ZXMODE handling</a><a href="NEXT-HANDLING.html">Next handling</a><a href="LIBRARY.html">Library</a><a href="ARCHITECTURE.html">Architecture</a>
+
+</div>
+<div class="zsp-kicker">zentools manual</div>
+<h1 id="spectrum-next-data-with-zentools">Spectrum Next data with
+zentools</h1>
+<p>This manual covers <code>zx next</code> and <code>zx zx0</code>:
+palettes, sprites, Layer 2 and LoRes screens, tiles and tilemaps, Timex
+screens, ZX0 compression, and NEX files. It works through making the
+graphics for a small game and packing them into a NEX file. It doesn't
+repeat the full flag reference, which is in the <a
+href="CLI.html#zx-next">CLI manual</a>.</p>
+<p>For classic <code>.scr</code> screens and the ZXMODE modes, see the
+<a href="SPRITE-HANDLING.html">sprite handling</a> and <a
+href="ZXMODE-HANDLING.html">ZXMODE handling</a> manuals.</p>
+<h2 id="contents">Contents</h2>
+<ul>
+<li><a href="#the-tutorial-assets">The tutorial assets</a></li>
+<li><a href="#next-colour-in-brief">Next colour in brief</a></li>
+<li><a href="#a-title-screen-in-layer-2">A title screen in Layer
+2</a></li>
+<li><a href="#palettes">Palettes</a></li>
+<li><a href="#sprites">Sprites</a></li>
+<li><a href="#sprite-attributes">Sprite attributes</a></li>
+<li><a href="#tiles-and-tilemaps">Tiles and tilemaps</a></li>
+<li><a href="#lores-and-timex-screens">LoRes and Timex screens</a></li>
+<li><a href="#compressing-with-zx0">Compressing with ZX0</a></li>
+<li><a href="#packing-a-nex-file">Packing a NEX file</a></li>
+<li><a href="#reference-notes">Reference notes</a></li>
+</ul>
+<h2 id="the-tutorial-assets">The tutorial assets</h2>
+<p>The sprites and the tile level were drawn for this manual, and anyone
+may use them. The title screen is Giles Laurent's photograph <em>Chateau
+de Chillon and Dents du Midi</em>, licensed under <a
+href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>;
+the screens made from it here are adaptations shared under the same
+licence. The <a href="ZXMODE-HANDLING.html#the-pictures">ZXMODE manual</a>
+says where to get it as <code>chillon.jpg</code>.</p>
+<p><img src="images/next-sprites.png"
+alt="A sprite sheet drawn at four times its size: four frames of a small grey spaceship with a cyan cockpit and a flame that grows and shrinks, above four frames of a spinning gold coin" /></p>
+<p><em><code>sprites.png</code>, 64x32 pixels with a transparent
+background, shown at four times its size. The top row has four frames of
+a ship and the bottom row four frames of a coin. The fourth ship frame
+repeats the second, and so does the fourth coin frame.</em></p>
+<p><img src="images/next-level.png"
+alt="A small platform level drawn at four times its size: blue sky with white clouds, a brick block, green grass on brown earth, a green pipe going down and turning sideways underground, and a pool of water" /></p>
+<p><em><code>level.png</code>, 160x64 pixels (20x8 tiles of 8x8), shown
+at four times its size. It is built from a few tiles, some of them
+mirrored or turned copies of others.</em></p>
+<h2 id="next-colour-in-brief">Next colour in brief</h2>
+<p>Every Next colour is 9-bit RGB333, with three bits each of red, green
+and blue, so there are 512 colours. Layer 2, sprites and tiles show
+8-bit (or 4-bit) indices into a palette of such colours.</p>
+<ul>
+<li>A palette file has no header. The usual <code>.nxp</code> holds two
+bytes per colour. <code>zx</code> also reads and writes three other
+layouts used by other tools (see <a href="#palettes">Palettes</a>).</li>
+<li>An 8-bit image channel becomes 3 bits by rounding to the nearest of
+the eight levels (<code>--round nearest</code>, the default). The other
+modes are <code>floor</code>, <code>ceil</code> and
+<code>distance</code>, which is gfx2next's default.</li>
+<li>Transparency is not an alpha channel. Layer 2, the ULA and LoRes
+treat a pixel as transparent when its colour matches the global
+transparency colour (NextReg 0x14, 0xE3 at reset). Sprites compare the
+pixel's index with NextReg 0x4B (0xE3 at reset; a 4-bit sprite compares
+only the low four bits, so 3). The tilemap compares its index with
+NextReg 0x4C (0xF at reset). <code>--transparent n</code> gives pixels
+less than half opaque the index n, and stores n's RGB332 colour in that
+palette entry. With 0xE3, the same files work for Layer 2 and 8-bit
+sprites at their reset settings.</li>
+<li>The standard palette maps index i to the RGB332 colour i.
+<code>zx next palette std -o std.nxp</code> writes it.</li>
+</ul>
+<p>An image becomes palette indices in one of four ways:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Source</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>An indexed PNG or BMP</td>
+<td>Its palette and indices are kept as they are, as gfx2next does.</td>
+</tr>
+<tr class="even">
+<td><code>--match file.nxp</code></td>
+<td>Each colour becomes the nearest colour of an existing palette.</td>
+</tr>
+<tr class="odd">
+<td><code>--std</code></td>
+<td>Each colour becomes the nearest colour of the standard palette.</td>
+</tr>
+<tr class="even">
+<td>Anything else</td>
+<td>If the image's colours fit after reduction to RGB333, they are kept
+in the order they first appear. Otherwise <code>zx</code> chooses the
+colours by median cut.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="a-title-screen-in-layer-2">A title screen in Layer 2</h2>
+<p>Layer 2 is the Next's bitmap layer. It has three sizes, plus the
+lower-resolution LoRes layer:</p>
+<table>
+<thead>
+<tr class="header">
+<th><code>--mode</code></th>
+<th>Size</th>
+<th>Bits per pixel</th>
+<th>Stored</th>
+<th>Bytes</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>256x192</code></td>
+<td>256x192</td>
+<td>8</td>
+<td>row by row</td>
+<td>49152</td>
+</tr>
+<tr class="even">
+<td><code>320x256</code></td>
+<td>320x256</td>
+<td>8</td>
+<td>column by column</td>
+<td>81920</td>
+</tr>
+<tr class="odd">
+<td><code>640x256</code></td>
+<td>640x256</td>
+<td>4</td>
+<td>column by column</td>
+<td>81920</td>
+</tr>
+<tr class="even">
+<td><code>lores</code></td>
+<td>128x96</td>
+<td>8</td>
+<td>row by row</td>
+<td>12288</td>
+</tr>
+<tr class="odd">
+<td><code>lores4</code></td>
+<td>128x96</td>
+<td>4</td>
+<td>row by row</td>
+<td>6144</td>
+</tr>
+</tbody>
+</table>
+<p><code>zx scr fit</code> fits the photograph to 320x256 with the
+Lanczos filter. <code>zx next bitmap encode</code> then writes the
+screen and its palette:</p>
+<pre><code>zx scr fit chillon.jpg --size 320x256 --resize fill --filter lanczos -o chillon-320.png
+zx next bitmap encode chillon-320.png --mode 320x256 -o title.nxi --palette title.nxp
+zx next bitmap decode title.nxi --palette title.nxp -o title.png</code></pre>
+<p><code>bitmap encode</code> has its own <code>--resize</code>, but it
+has no Lanczos filter, trim or centring, so fitting with
+<code>zx scr fit</code> first gives a better picture.</p>
+<p><img src="images/next-title-320.png"
+alt="The Chillon photograph as a 320x256 Layer 2 screen, shown at twice its size: the castle lit orange at dusk under the snowy mountains, with visible steps of colour in the evening sky" /></p>
+<p><em>The 320x256 Layer 2 screen, shown at twice its size. The steps in
+the evening sky are the limit of three bits per channel.</em></p>
+<p><code>bitmap info</code> describes a screen file:</p>
+<pre><code>$ zx next bitmap info title.nxi
+title.nxi: 320x256, 320x256 at 8 bits per pixel, column by column
+  (640x256 at 4 bits is the same size; decode with -mode 640x256 for that)
+  no embedded palette</code></pre>
+<p>The two 81920-byte modes can't be told apart by size, so
+<code>decode</code> takes such a file as <code>320x256</code> unless
+<code>--mode 640x256</code> says otherwise. With <code>--embed</code>,
+the palette is written before the pixels, 82432 bytes in all, and
+<code>decode</code> finds it by the file's size.</p>
+<p><strong>Colour depth and dithering.</strong> This photograph's dusk
+colours reduce to only 97 distinct RGB333 colours, so they all fit in
+the palette and none has to be chosen. <code>--dither fs</code> has
+nothing to do here: dithering applies only when an image's colours are
+matched or chosen. The steps in the sky come from the 512-colour space
+itself, and <code>zx</code> does not currently dither against them (the
+work register tracks this as T-09).</p>
+<p>Dithering matters when the palette is too small for the picture. The
+640x256 mode has 16 colours:</p>
+<pre><code>zx scr fit chillon.jpg --size 640x256 --resize fill --filter lanczos -o chillon-640.png
+zx next bitmap encode chillon-640.png --mode 640x256 -o hi.nxi --palette hi.nxp
+zx next bitmap encode chillon-640.png --mode 640x256 --dither fs -o hi-fs.nxi --palette hi-fs.nxp</code></pre>
+<p><img src="images/next-640-dither.png"
+alt="Two crops of the 640x256 screen side by side, shown at twice their size: on the left without dithering, the keep, roofs and mountains in flat bands of brown, grey and lilac; on the right with Floyd-Steinberg dithering, the same shading smoothly" /></p>
+<p><em>16 colours at 640x256, without dithering (left) and with
+<code>--dither fs</code> (right). Measured as the ZXMODE manual
+describes, with <code>zx scr compare --metric blur</code>, the error
+falls from 7.75 to 6.16.</em></p>
+<p>The standard palette needs no palette file, but it fits a picture
+less well. <code>--std</code> gives the 320x256 Chillon an error of
+14.25, against 6.81 with its own palette.</p>
+<h2 id="palettes">Palettes</h2>
+<p><code>palette info</code> lists a palette, and
+<code>palette decode</code> draws it as a 16x16 grid of swatches:</p>
+<pre><code>$ zx next palette info title.nxp
+title.nxp: 256 colours (rgb333)
+  0  RGB333 123  #24496D
+  1  RGB333 122  #244949
+  2  RGB333 245  #4992B6
+...
+zx next palette decode title.nxp -o title-palette.png</code></pre>
+<p>Other tools want other layouts, which <code>--layout</code>,
+<code>--from</code> and <code>--to</code> name:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Layout</th>
+<th>Bytes per colour</th>
+<th>Written by</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>rgb333</code> (default)</td>
+<td>2</td>
+<td>gfx2next and nextraw: the usual <code>.nxp</code></td>
+</tr>
+<tr class="even">
+<td><code>rgb332</code></td>
+<td>1</td>
+<td>gfx2next <code>-pal-rgb332</code>; the hardware fills in the missing
+blue bit as the OR of the other two</td>
+</tr>
+<tr class="odd">
+<td><code>gbr444</code></td>
+<td>2</td>
+<td>gfx2next <code>-pal-gbr444</code></td>
+</tr>
+<tr class="even">
+<td><code>bgr222</code></td>
+<td>1</td>
+<td>gfx2next <code>-pal-bgr222</code>, the Master System layout</td>
+</tr>
+</tbody>
+</table>
+<pre><code>$ zx next palette convert title.nxp --to rgb332 -o title.pal
+wrote title.pal (256 colours, rgb332, 256 bytes)
+$ zx next palette info title.pal --layout rgb332
+title.pal: 256 colours (rgb332)
+  0  RGB333 123  #24496D
+  1  RGB333 123  #24496D
+...</code></pre>
+<p>Colour 1 was RGB333 122. In one byte, its low blue bit is lost, and
+the hardware shows the OR of the other two blue bits, so it comes back
+as 123. Colour 0's low blue bit was already that OR, so it survives.</p>
+<p><code>palette encode</code> takes or chooses an image's palette on
+its own, with the colour flags above. <code>--min</code> sorts a
+palette, drops duplicates and renumbers the pixels, as gfx2next's
+<code>-pal-min</code> does. It refuses to work with
+<code>--transparent</code>, because sorting would move the transparent
+entry.</p>
+<h2 id="sprites">Sprites</h2>
+<p>A <code>.spr</code> file is 16x16 patterns one after another: 256
+bytes each at 8 bits per pixel, or 128 at 4 bits.
+<code>sprite encode</code> cuts an image into patterns, left to right
+and top to bottom:</p>
+<pre><code>$ zx next sprite encode sprites.png --dedup --transparent 0xE3 -o sprites.spr --palette sprites.nxp
+pattern 3 repeats kept pattern 1
+pattern 7 repeats kept pattern 4
+wrote sprites.spr (6 patterns, 1536 bytes)
+wrote sprites.nxp (256 colours, rgb333, 512 bytes)</code></pre>
+<p><code>--dedup</code> dropped the two repeated frames. Each message
+gives the pattern's position in the image, then the number of the kept
+pattern it repeats in the file. The animation table in your program
+should use the file's numbers: ship frames 0, 1, 2, 1 and coin frames 3,
+4, 5, 4. The transparent background became index 0xE3.</p>
+<pre><code>$ zx next sprite info sprites.spr
+sprites.spr: 6 patterns of 16x16 at 8 bits per pixel
+  0  7 colours used
+  1  8 colours used
+...
+zx next sprite decode sprites.spr --palette sprites.nxp --transparent 0xE3 --per-row 8 -o sheet.png</code></pre>
+<p><img src="images/next-sprite-sheet.png"
+alt="The six patterns of the sprite file in a row, at four times their size, on a transparent background: three ship frames and three coin frames" /></p>
+<p><em><code>sprites.spr</code> drawn back, at four times its size: the
+six patterns left after dropping the repeats.</em></p>
+<p><code>decode --range 3-5</code> draws only some patterns, and
+<code>--split dir</code> writes each one as its own PNG
+(<code>dir/000.png</code> onwards), which is handy for checking frames
+one at a time. <code>--pad n</code> fills a sheet out to n patterns with
+the transparent index, for a program that loads a fixed number.</p>
+<p><strong>4-bit sprites.</strong> At 4 bits per pixel, a pattern takes
+half the memory and its 16 colours are one of the palette's 16-colour
+banks. This sheet has 11 colours with the background, so it fits:</p>
+<pre><code>zx next sprite encode sprites.png --depth 4 --dedup --transparent 3 -o sprites4.spr --palette sprites4.nxp
+zx next sprite decode sprites4.spr --depth 4 --palette sprites4.nxp --transparent 3 -o sheet4.png</code></pre>
+<p>That writes 768 bytes of patterns and a 16-colour palette of 32
+bytes. The transparent index is 3 because a 4-bit sprite compares only
+the low four bits of NextReg 0x4B, which is 0xE3 at reset. A 4-bit
+pattern stores its left pixel in the high nibble.</p>
+<h2 id="sprite-attributes">Sprite attributes</h2>
+<p>The sprite hardware takes four or five attribute bytes per sprite
+through port 0x57: position, pattern, palette offset, mirroring,
+rotation and scaling. <code>attrs encode</code> builds that table from
+JSON, so it can be edited and kept under version control.
+<code>attrs decode</code> turns a table back into JSON.</p>
+<div class="sourceCode" id="cb9"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="ot">[</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">{</span><span class="dt">&quot;x&quot;</span><span class="fu">:</span> <span class="dv">152</span><span class="fu">,</span> <span class="dt">&quot;y&quot;</span><span class="fu">:</span> <span class="dv">200</span><span class="fu">,</span> <span class="dt">&quot;visible&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span> <span class="dt">&quot;pattern&quot;</span><span class="fu">:</span> <span class="dv">0</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">{</span><span class="dt">&quot;x&quot;</span><span class="fu">:</span> <span class="dv">40</span><span class="fu">,</span> <span class="dt">&quot;y&quot;</span><span class="fu">:</span> <span class="dv">60</span><span class="fu">,</span> <span class="dt">&quot;visible&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span> <span class="dt">&quot;pattern&quot;</span><span class="fu">:</span> <span class="dv">3</span><span class="fu">,</span> <span class="dt">&quot;extended&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span> <span class="dt">&quot;scale_x&quot;</span><span class="fu">:</span> <span class="dv">1</span><span class="fu">,</span> <span class="dt">&quot;scale_y&quot;</span><span class="fu">:</span> <span class="dv">1</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">{</span><span class="dt">&quot;x&quot;</span><span class="fu">:</span> <span class="dv">200</span><span class="fu">,</span> <span class="dt">&quot;y&quot;</span><span class="fu">:</span> <span class="dv">60</span><span class="fu">,</span> <span class="dt">&quot;visible&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span> <span class="dt">&quot;pattern&quot;</span><span class="fu">:</span> <span class="dv">3</span><span class="fu">,</span> <span class="dt">&quot;extended&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">{</span><span class="dt">&quot;x&quot;</span><span class="fu">:</span> <span class="dv">20</span><span class="fu">,</span> <span class="dt">&quot;y&quot;</span><span class="fu">:</span> <span class="dv">0</span><span class="fu">,</span> <span class="dt">&quot;visible&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span> <span class="dt">&quot;pattern&quot;</span><span class="fu">:</span> <span class="dv">4</span><span class="fu">,</span> <span class="dt">&quot;extended&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span> <span class="dt">&quot;relative&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">{</span><span class="dt">&quot;x&quot;</span><span class="fu">:</span> <span class="dv">40</span><span class="fu">,</span> <span class="dt">&quot;y&quot;</span><span class="fu">:</span> <span class="dv">0</span><span class="fu">,</span> <span class="dt">&quot;visible&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span> <span class="dt">&quot;pattern&quot;</span><span class="fu">:</span> <span class="dv">5</span><span class="fu">,</span> <span class="dt">&quot;extended&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span> <span class="dt">&quot;relative&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">}</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="ot">]</span></span></code></pre></div>
+<pre><code>$ zx next attrs encode sprites.json -o sprites.atr
+wrote sprites.atr (5 sprites, 24 bytes)</code></pre>
+<p>This places the ship (pattern 0) at 152,200, and a coin at double
+size. The last three sprites form a group: an anchor coin at 200,60, and
+two relative sprites 20 and 40 pixels to its right. A relative sprite's
+<code>x</code> and <code>y</code> are offsets from the last anchor, -128
+to 127, so moving the anchor moves the whole group.</p>
+<p>Scaling, relative sprites, 4-bit patterns and some other fields live
+in the fifth byte. <code>zx</code> refuses a sprite that needs it unless
+it sets <code>extended</code>, so the table never silently drops a
+field. The first sprite needs only four bytes, which is why five sprites
+take 24 bytes. <code>--fixed5</code> writes five bytes for every sprite,
+for a program that uploads the table with a fixed stride.
+<code>scale_x</code> and <code>scale_y</code> run from 0 to 3, for 1x to
+8x. The <a href="CLI.html#zx-next">CLI manual</a> lists every field.</p>
+<h2 id="tiles-and-tilemaps">Tiles and tilemaps</h2>
+<p>The tilemap layer draws a screen from a set of tiles and a map of
+tile indices. <code>tiles encode</code> cuts an image into tiles (8x8 by
+default) and writes three files from a base name: <code>base.nxt</code>
+holds the tiles, <code>base.nxm</code> the map, and
+<code>base.nxb</code> the blocks, when there are any.</p>
+<p>How many tiles are left depends on how far <code>--dedup</code> looks
+for matches:</p>
+<table>
+<thead>
+<tr class="header">
+<th><code>--dedup</code></th>
+<th>Tiles from <code>level.png</code></th>
+<th>What else counts as a repeat</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>none</code></td>
+<td>160</td>
+<td>nothing: every tile is kept</td>
+</tr>
+<tr class="even">
+<td><code>repeat</code></td>
+<td>11</td>
+<td>an identical earlier tile</td>
+</tr>
+<tr class="odd">
+<td><code>mirror</code></td>
+<td>9</td>
+<td>also a mirrored one: the right half of each cloud and the left grass
+edge</td>
+</tr>
+<tr class="even">
+<td><code>rotate</code></td>
+<td>8</td>
+<td>also a turned one: the sideways pipe</td>
+</tr>
+</tbody>
+</table>
+<p>A mirrored or turned match costs no tile memory, because the map
+entry's attribute bits draw the stored tile mirrored or turned. Those
+bits need two-byte map entries, <code>--map16</code>. At 4 bits per
+pixel, the 8 tiles take 256 bytes:</p>
+<pre><code>$ zx next tiles encode level.png --depth 4 --colors 16 --dedup rotate --map16 -o level --palette level.nxp
+wrote level.nxt (8 tiles of 8x8 at 4 bits, 256 bytes)
+wrote level.nxm (20x8, 320 bytes)
+wrote level.nxp (16 colours, rgb333, 32 bytes)</code></pre>
+<p><code>--colors 16</code> is needed because a 4-bit tile set from an
+image that is not indexed must not choose more colours than a bank
+holds. An indexed image drawn in banks of 16 colours keeps its banks
+instead: each map entry's palette offset comes from the high four bits
+of the tile's last pixel, as gfx2next does.</p>
+<p><img src="images/next-tileset.png"
+alt="The eight stored tiles in a row, at eight times their size: sky, the left half of a cloud, brick, an upright pipe, grass, a right-hand grass edge, water and earth" /></p>
+<p><em>The tile set, at eight times its size, in the order the tiles
+first appear in the level. The right half of the cloud, the left grass
+edge and the sideways pipe are not stored; the map draws them from
+these.</em></p>
+<p><code>tiles decode</code> draws the tile set as a sheet, or draws the
+map itself with its attributes applied. Drawing the map is the check
+that nothing was lost:</p>
+<pre><code>zx next tiles decode level.nxt --depth 4 --palette level.nxp -o tileset.png
+zx next tiles decode level.nxt --depth 4 --palette level.nxp --map level.nxm --map-size 20x8 --map16 -o check.png
+zx scr compare level.png check.png</code></pre>
+<p>The last command prints <code>0 of 10240 pixels differ</code>.</p>
+<p>Like gfx2next, <code>zx</code> records every way a tile matches. A
+symmetric tile, such as the plain sky, can therefore carry mirror bits
+in its map entry although it is drawn the same either way.</p>
+<p>Some other flags:</p>
+<ul>
+<li><code>--map-columns</code> writes the map column by column.</li>
+<li><code>--offset n</code> adds n to every tile index, for a tile set
+loaded after other tiles.</li>
+<li><code>--pal-offset n</code> sets every entry's palette offset.</li>
+<li><code>--block WxH</code> groups tiles into blocks, which the map
+then indexes. Blocks hold plain tile indices, so they work only with
+<code>--dedup none</code> or <code>repeat</code>.</li>
+</ul>
+<h2 id="lores-and-timex-screens">LoRes and Timex screens</h2>
+<p><strong>LoRes</strong> is 128x96 at 8 bits per pixel (or 4 bits with
+<code>lores4</code>), with the same palette handling as Layer 2:</p>
+<pre><code>zx scr fit chillon.jpg --size 128x96 --resize fill --filter lanczos -o chillon-128.png
+zx next bitmap encode chillon-128.png --mode lores -o title.slr --palette lores.nxp</code></pre>
+<p><img src="images/next-lores.png"
+alt="Chillon at LoRes, 128x96, shown at four times its size: large square pixels, but the full range of the dusk colours" /></p>
+<p><em>LoRes, at four times its size.</em></p>
+<p><strong>Timex screens.</strong> The Next also has the two Timex
+modes. Both files are 12288 bytes: the screens at 0x4000 and 0x6000, one
+after the other. The size can't tell them apart, so <code>--mode</code>
+is always given.</p>
+<ul>
+<li><strong>HiColour</strong> is 256x192 with an attribute for every 8x1
+pixels instead of every 8x8. The encoder chooses each span's ink, paper
+and brightness for the least error.</li>
+<li><strong>HiRes</strong> is 512x192 in a single ink colour
+(<code>--ink</code>, 0 to 7) and its complement as paper. From a
+full-colour image, a pixel darker than mid-grey becomes ink; an indexed
+image uses any index but 0 as ink.</li>
+</ul>
+<pre><code>zx scr fit chillon.jpg --size 256x192 --resize fill --filter lanczos -o chillon-256.png
+zx next timex encode chillon-256.png --mode hicolour -o title.hic
+zx scr fit chillon.jpg --resize fill --filter lanczos -o chillon-512.png
+zx next timex encode chillon-512.png --mode hires --ink 1 --resize stretch -o title.shr
+zx next timex decode title.hic --mode hicolour -o hic.png</code></pre>
+<p>A HiRes pixel is half as wide as it is tall, so a HiRes picture is
+fitted at 512x384, the shape of the screen, and then squeezed to 512x192
+with <code>--resize stretch</code>. Fitting straight to 512x192 would
+crop a wide strip of the picture and show it stretched upwards.</p>
+<p><img src="images/next-hicolour.png"
+alt="Chillon in HiColour, shown at twice its size: Spectrum colours, with a grey sky, blue and magenta mountains, a red and yellow castle and black trees, the colour changing every pixel row" /></p>
+<p><em>HiColour, at twice its size. It still has two colours per 8
+pixels across, but each pixel row of a cell can have its own
+pair.</em></p>
+<p><img src="images/next-hires.png"
+alt="Chillon in HiRes: a blue and yellow two-colour image, cut at mid-grey, with only the sky, the lit keep and the lake&#39;s light picked out in yellow" /></p>
+<p><em>HiRes with ink 1 (blue) and its complement (yellow), shown with
+each row doubled to keep the proportions. It suits line art and text
+better than a photograph, especially a dark one: draw for it, or dither
+to one bit before encoding.</em></p>
+<h2 id="compressing-with-zx0">Compressing with ZX0</h2>
+<p><code>zx zx0</code> compresses in Einar Saukas's ZX0 format, which
+the Next tools and many Spectrum programs decompress at run time. It is
+a port of the reference compressor, with the same optimal parse, so it
+writes the same bytes as <code>zx0</code>.</p>
+<pre><code>$ zx zx0 title.nxi
+wrote title.nxi.zx0 (24757 bytes from 81920)
+$ zx zx0 --quick title.nxi -o title-quick.nxi.zx0
+wrote title-quick.nxi.zx0 (25343 bytes from 81920)
+$ zx zx0 -d title.nxi.zx0 -o back.nxi
+wrote back.nxi (81920 bytes from 24757)</code></pre>
+<p>The optimal parse takes time. Here it took 1 minute 57 seconds for
+the 80 KB screen. <code>--quick</code> searches nearer offsets only, and
+took 4.6 seconds for 2% more bytes. Use <code>--quick</code> while
+iterating and the full search for a release.</p>
+<ul>
+<li><code>--back</code> compresses backwards, for decompressing in place
+from the end of a buffer.</li>
+<li><code>--classic</code> writes the older v1 format that gfx2next
+writes.</li>
+</ul>
+<h2 id="packing-a-nex-file">Packing a NEX file</h2>
+<p>A NEX file holds a program's memory banks, a loading screen and its
+palette, and a header with the start address. <code>nex build</code>
+puts one together. Here, <code>game.bin</code> stands for a program
+assembled to run at 0x8000:</p>
+<pre><code>$ zx next nex build --bin 0x8000=game.bin --pc 0x8000 --sp 0xFF00 --screen l2_320=title.nxi --palette title.nxp --border 0 -o game.nex
+wrote game.nex (NEX V1.3, 1 banks, 99328 bytes)
+$ zx next nex info game.nex
+game.nex: NEX V1.3
+  start 8000, stack FF00, bank 0 at C000, border 0
+  core 2.0.28 or later, 768 KB
+  loading screen: l2_320, with palette
+  1 banks: 2</code></pre>
+<ul>
+<li><code>--bin ADDR=file</code> loads a file at a 64 KB address. It
+goes into the banks that the Next maps there at start: 5 at 0x4000, 2 at
+0x8000 and 0 at 0xC000. <code>--bank N=file</code> places a file in any
+16 KB bank directly, for data beyond the first 64 KB.</li>
+<li><code>--screen</code> takes the loading screen. Its kinds are
+<code>l2</code>, <code>l2_320</code>, <code>l2_640</code>,
+<code>lores</code>, <code>ula</code>, <code>hires</code> and
+<code>hicolour</code>.</li>
+<li>A 320x256 screen needs NEX version V1.3, so <code>zx</code> raised
+the version by itself. Checksums, copper code and appended data
+(<code>--checksum</code>, <code>--copper</code>, <code>--append</code>)
+do the same.</li>
+</ul>
+<p><code>nex extract</code> takes a file apart, and
+<code>nex build --header</code> puts it back together from those parts
+with changes:</p>
+<pre><code>$ zx next nex extract -o parts game.nex
+wrote 4 files to parts
+$ ls parts
+bank_002.bin  header.json  palette.nxp  screen_l2_320.nxi</code></pre>
+<p><code>header.json</code> holds the start address, stack, entry bank,
+border, core version and the other header fields. <code>zx</code> lays
+out a NEX file as sjasmplus's <code>SAVENEX</code> does. Its tests
+rebuild six files that sjasmplus wrote, byte for byte.</p>
+<h2 id="reference-notes">Reference notes</h2>
+<p>All the commands here are <code>zx next</code> and
+<code>zx zx0</code>. The full flag reference is in the <a
+href="CLI.html#zx-next">CLI manual</a>, and the library API
+(<code>pkg/zxn</code>, <code>pkg/nex</code>, <code>pkg/zx0</code>) in
+the <a href="LIBRARY.html">library manual</a>. Points that are easy to
+miss:</p>
+<ul>
+<li><strong>The output matches the community tools.</strong> Palettes,
+sprites, Layer 2 bitmaps and tiles match gfx2next byte for byte, and
+Layer 2 also matches nextbmp and nextraw. With
+<code>--round floor</code> and <code>ceil</code>, gfx2next reduces a
+palette colour twice, so it moves one more step. <code>zx</code> reduces
+once, as nextbmp does.</li>
+<li><strong>Some layouts are not yet checked on hardware.</strong>
+Sprite attributes, the Timex screens and 4-bit LoRes follow the Next's
+documentation, and haven't yet been checked on a Next or an emulator.
+The work register tracks this as T-04.</li>
+<li><strong>Transparency is set by NextRegs, not by the files.</strong>
+Layer 2 compares colours with NextReg 0x14, sprites compare indices with
+0x4B, and the tilemap compares indices with 0x4C. A program that changes
+those registers needs files encoded to match. Decoding with
+<code>--transparent</code> only shows which index a file uses.</li>
+<li><strong>gfx2next options not in <code>zx</code>.</strong> Tile
+cutting in column order, planar 4-bit tiles, splitting output into bank
+files, and assembler or C output are not in <code>zx next</code>. The
+work register tracks them as T-06. ZX0 compression is a separate step,
+<code>zx zx0</code>.</li>
+</ul>
+<div class="zsp-footer">github.com/ha1tch/zentools</div>
+</div>
+</div>
+</body>
+</html>

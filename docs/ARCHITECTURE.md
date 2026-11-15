@@ -1,7 +1,9 @@
 # zentools — architecture
 
 zentools is the canonical Go library for ZX Spectrum binary formats: tape images,
-snapshots, disk images, and BASIC tokenisation. It exists so that the tools in
+snapshots, BASIC tokenisation, screens and graphics (classic, ZXMODE and
+Spectrum Next), and NEX files. Disk images stay with plus3 (see Format
+ownership). It exists so that the tools in
 the ecosystem (zenas, zenzx, plus3, zendis, and future ones) share one verified
 implementation of each format instead of maintaining several partial,
 "sometimes badly" copies.
@@ -42,23 +44,27 @@ github.com/ha1tch/zentools
 │   ├── tap/         TAP tape images. Encode/decode CODE and Program blocks.
 │   ├── tzx/         TZX tape images. Encode (and decode) the common block set.
 │   ├── pzx/         PZX tape images, the simpler TZX successor.
-│   ├── snapshot/    .zxs / .sna / .z80 via a neutral MachineState.
+│   ├── snapshot/    .sna / .z80 via a neutral MachineState.
 │   │   ├── state.go     MachineState and its sub-structs (the pivot type)
-│   │   ├── zxs.go       chunked ZenZX format
 │   │   ├── sna.go       48K / 128K .sna
 │   │   └── z80.go       .z80 (versioned, compressed)
 │   ├── szx/         .szx (zx-state) via the same neutral MachineState.
 │   ├── rzx/         .rzx input-recording files (embeds a snapshot block).
 │   ├── basic/       BASIC tokenise + detokenise (48K and 128K keywords).
-│   ├── scr/         .scr screens, image conversion, .cut asset collections.
+│   ├── scr/         .scr screens, image conversion (PNG, BMP, GIF, JPEG), .cut
+│   │                asset collections, ZXMODE pictures and ZXPAL palettes.
+│   ├── zxn/         ZX Spectrum Next graphics: palettes, sprites and attributes,
+│   │                Layer 2, LoRes and Timex screens, tiles, colour reduction.
+│   ├── nex/         NEX files, the Spectrum Next executable format.
+│   ├── zx0/         ZX0 compression (a port of the reference compressor).
 │   ├── bdf/         BDF bitmap font reader, used internally by scr's OCR.
 │   ├── build/       overlay machine code onto a boot state; emit tapes/snapshots.
 │   └── version/     library version constant.
 ├── cmd/             CLI tools over the packages.
 │   ├── maketap, totap, loadtap, tap2tzx   drop-in zxgotools replacements.
-│   └── zx/          modern unified front-end (tap, tzx, pzx, basic, scr, snap,
-│                    rzx, convert, edit, build, info). Third-party deps (flags)
-│                    live here, not in pkg/.
+│   └── zx/          modern unified front-end (tap, tzx, pzx, basic, scr, next, zx0,
+│                    snap, rzx, convert, edit, build, info). Flag parsing lives
+│                    here, not in pkg/; zentools has no third-party dependencies.
 └── (hygiene: VERSION, Makefile, .repoman.json, release.sh, syncver.sh,
     CHANGELOG.md, .gitignore, LICENSE)
 ```
@@ -72,7 +78,9 @@ to that project:
 | Format | Owner | Rationale |
 |--------|-------|-----------|
 | `.tap`, `.tzx` | zentools | interchange tape formats every tool reads |
-| `.sna`, `.z80` | zentools | portable snapshot standards |
+| `.sna`, `.z80`, `.szx`, `.rzx` | zentools | portable snapshot and recording standards |
+| `.scr`, `.zm1`, `.zm2`, `.cut` | zentools | Spectrum screens, ZXMODE pictures and asset collections, shared by the graphics tools |
+| `.nxp`, `.spr`, `.nxi`, `.nxt`, `.nxm`, `.nxb`, `.nex` (Spectrum Next) | zentools | the Next's interchange graphics and program formats, written by the community tools (gfx2next, nextbmp, sjasmplus); zentools absorbed zenpal for them |
 | BASIC tokenisation | zentools | shared encode/decode |
 | `.zxs` | **zenzx (native)** | zenzx's proprietary chunked format; its magic and metadata are emulator-specific |
 | `.dsk` (+3DOS) | **plus3 (native)** | mature, tested, CI-backed; zentools may depend on plus3 for disk, never the reverse |
@@ -84,8 +92,11 @@ interchange ones.
 
 ## Package coupling
 
-Packages do not import each other except that `cmd/` imports `pkg/*`. A format
-package importing another format package would couple them; keep them flat.
+A format package imports another only to share a model, never for convenience:
+`szx` and `build` use `snapshot`'s machine state, `build` composes `tap`, `tzx`
+and `basic`, `scr`'s OCR uses `bdf`, and `zxn` takes the Spectrum ULA colours
+from `scr` so they are defined once. `cmd/` imports `pkg/*`. Otherwise keep the
+packages flat.
 (The one defensible exception, if it arises: a future `pkg/spectrum` holding
 shared constants like the XOR checksum or memory-map addresses. Not needed yet —
 TAP and TZX each own their small bit of shared knowledge until duplication
@@ -96,12 +107,13 @@ actually hurts.)
 The naming is uniform so a consumer learns one pattern. Each format provides an
 in-memory core plus optional file/stream helpers.
 
-### pkg/tap (built, verified)
+### pkg/tap
 
 ```go
 func EncodeCode(name string, data []byte, loadAddress uint16) []byte
 func EncodeProgram(name string, data []byte, autostart uint16) []byte
-func Decode(image []byte) ([]Block, error)   // to add: parse a TAP into blocks
+func Decode(image []byte) ([]Block, error)
+func DecodeBlock(raw []byte) (Block, error)
 func WriteCodeFile(inputPath, outputPath, name string, loadAddress uint16) error
 ```
 
@@ -133,12 +145,13 @@ type MachineState struct {
     // Audio/FDC optional, format-permitting.
 }
 
-func EncodeZXS(s *MachineState) ([]byte, error)
-func DecodeZXS(image []byte) (*MachineState, error)
-func EncodeSNA(s *MachineState) ([]byte, error)
+func EncodeSNA(s *MachineState) ([]byte, error)    // 48K
 func DecodeSNA(image []byte) (*MachineState, error)
+func EncodeSNA128(s *MachineState) ([]byte, error) // 128K
+func DecodeSNA128(image []byte) (*MachineState, error)
 func EncodeZ80(s *MachineState) ([]byte, error)
-func DecodeZ80(image []byte) (*MachineState, error)
+func EncodeZ80v3(s *MachineState) ([]byte, error)
+func DecodeZ80(image []byte) (*MachineState, error) // versions 1 to 3
 ```
 
 zenzx keeps a small adapter: `func (zx *ZenZX) toMachineState() *MachineState`
@@ -157,6 +170,9 @@ Both directions (zxgotools has only tokenise; plus3 has both). Options carry
 case-independence and the like (borrowed from zxgotools' parser).
 
 ## Source provenance and per-package plan
+
+This was the plan when zentools began. The packages it lists are built;
+the [library manual](LIBRARY.md) describes them as they are.
 
 | Package | Best source | Plan |
 |---------|-------------|------|

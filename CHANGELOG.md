@@ -4,6 +4,297 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.4] - 2026-11-14
+
+### Changed
+
+- **Documentation brought in line with the code.**
+  - The README describes the ZXMODE and palette-design work, adds ZXMODE
+    and Spectrum Next examples, and lists all fourteen packages
+    (it said ten, and left out `pkg/bdf`).
+  - The library manual now documents the classic `pkg/scr` API (screens,
+    attributes, conversion, cropping, asset collections), which it had
+    left to the doc comments, as well as `tap.DecodeBlock` and
+    `build.EncodeSZX`, `Overlay` and `CodeEnd`. Its overview now lists
+    `pkg/bdf` and every dependency between packages.
+  - The architecture document no longer lists a `.zxs` codec in
+    `pkg/snapshot` (that format belongs to zenzx) or third-party
+    dependencies in `cmd/`. It lists the snapshot functions that exist and
+    the screen formats zentools owns.
+
+### Removed
+
+- `MANIFEST.sha256`, which had not been updated since 0.8.6. Each release
+  zip still carries a fresh one, written by the archive step. This closes
+  T-07 (see RESOLVED.md).
+
+## [0.14.3] - 2026-11-14
+
+### Changed
+
+- The ZXMODE and Next handling manuals now use Giles Laurent's photograph
+  *Chateau de Chillon and Dents du Midi* (CC BY-SA 4.0) instead of the
+  Turner painting. It is a landscape that scores consistently near the
+  top in every palette among the specification's 22 colour pictures,
+  so it shows the tools at their best. Every figure, number and
+  command output in the two manuals was redone with it.
+- The Next manual now fits a HiRes picture at 512x384 and squeezes it to
+  512x192 with `--resize stretch`, so it keeps its proportions; fitting
+  straight to 512x192 cropped a wide strip and showed it stretched.
+
+## [0.14.2] - 2026-11-14
+
+### Added
+
+- **[Next handling manual](docs/NEXT-HANDLING.md)**: a worked guide to
+  `zx next` and `zx zx0`, making the graphics for a small game and
+  packing them into a NEX file. It covers Next colour and transparency,
+  a Layer 2 title screen, palettes and their layouts, 8- and 4-bit
+  sprites, sprite attributes, tiles and tilemaps, LoRes and Timex
+  screens, ZX0 and NEX files. The sprites and tiles were drawn for it.
+  Every command in it was run to produce its figures and output.
+
+### Fixed
+
+- The CLI manual said the hardware compares the RGB332 colour of the
+  transparent index for every layer. Layer 2 does (NextReg 0x14), but
+  sprites compare the index itself (NextReg 0x4B, of which a 4-bit sprite
+  uses the low four bits) and the tilemap its own index (NextReg 0x4C).
+
+## [0.14.1] - 2026-11-14
+
+### Added
+
+- **[ZXMODE handling manual](docs/ZXMODE-HANDLING.md)**: a worked guide
+  to the ZXMODE modes and ZXPAL palettes in `zx scr`, using a
+  public-domain Turner painting. It covers fitting, encoding in each
+  palette, the error measures, loaded registers, assets across palettes,
+  text on ZXMODE screens, error diffusion, and palette design with
+  `-banks`, `-cell` and `fitregs`. Every command in it was run to produce
+  its figures and numbers. The other manuals, the README and the HTML
+  navigation link to it.
+
+## [0.14.0] - 2026-11-14
+
+### Added
+
+- **Palette design tools from the ZXMODE specification's evaluation**, the
+  parts of its Python scripts that `zx` did not yet cover:
+  - `zx scr encode -banks file.csv` encodes over any colour banks, and
+    `-cell WxH` with cells of any size dividing the picture; the output is
+    a PNG. It matches the specification's `zxcommon.render` and
+    `zxfast.render_fast` pixel for pixel (4x4 cells, cells 4 wide and 8
+    tall, a 64-colour bank at another penalty).
+  - `-penalty p` sets the encoder's span penalty (reference 0.204), also
+    for encodings written as screens.
+  - `zx scr palette -banks` writes a palette's banks as the encoder pairs
+    within them.
+  - `zx scr fitregs` fits colours to add to ZXPAL3, ZXPAL4 or a one-bank
+    table from pictures, as the specification's register search does.
+    On its ten development pictures, cross-validated, it gives 10.14,
+    9.23, 8.58 and 7.95 for 8, 16, 32 and 48 colours (the
+    specification's run: 10.28, 9.42, 8.47, 7.91).
+- Library: `Banks`, `PaletteBanks`, `BanksCSV`, `ParseBanksCSV`,
+  `EncodeBanks`, `BankOptions`, `RefPenalty`, `ParseCellSize`,
+  `FitRegisters`, `EncodeOptions.Penalty`.
+
+## [0.13.0] - 2026-11-14
+
+### Added
+
+- **The ZXMODE specification's picture fit in `zx scr encode` and the new
+  `zx scr fit`**: `-filter lanczos` (Pillow's Lanczos resampler,
+  reproduced exactly), `-centering x,y` for `-resize fill`'s crop,
+  `-trim n` for scan margins, and `-grey` (Pillow's `convert("L")`).
+  `-resize fill -filter lanczos` gives the specification's fitted
+  pictures byte for byte from the same pixels.
+- **The specification's error measures in `zx scr compare -metric`**:
+  `blur` (RMS after Pillow's Gaussian blur of 1.5), `light` (0.75),
+  `blur=<sigma>`, `rms`, `ssim` (scikit-image's) and `all`; they match
+  the specification's tools to 1e-9. Either side may be a screen file.
+- **Loaded palette registers** (`-registers file.csv`) for encode, decode,
+  crop, ocr, cut, paste, flip, convert and compare, and `zx scr palette
+  -registers`, `-o file.csv`. The specification's register CSVs read as
+  they are.
+- **Cut and paste on ZXMODE screens**: `zx scr cut` reads `.zm1`/`.zm2`
+  in any palette and keeps the attributes; `zx scr paste` writes into any
+  screen and converts attributes when the asset's palette or registers
+  differ from the target's.
+- **ZCUT version 3**: an asset may carry its own register table; a
+  collection is written at the lowest version that holds it (v1 and v2
+  files are unchanged).
+- **`zx scr convert`** rewrites the attributes of a collection, one asset
+  or a screen for another palette and registers (and between ZXMODE0 and
+  ZXMODE1), keeping the bitmap and choosing the nearest target colours.
+- **`zx scr flip -h|-v`** for screens, collections and images.
+- `zx info` describes `.zm1`, `.zm2` and `.cut` files; `zx scr crop` (with
+  `-auto`) and `zx scr ocr` read ZXMODE screens.
+- **Experimental encoder options** from Part 4 of the specification:
+  `-diffuse f` (cell-level error diffusion), `-flat n` and
+  `-linear-pairs`, with measurements in the CLI manual. Diffusing half the
+  error lowered the error by 13-28%; the other two made it worse.
+- Library: `Registers`, `ParseRegistersCSV`, `EncodePictureWith`,
+  `FitToWith`, `ResizeLanczos`, `FitLanczos`, `Trim`, `Grey`,
+  `BlurredRMSE`, `SSIM`, `ConvertAsset`, `CutPicture`, `PastePicture`,
+  `Asset.Flip`, `Picture.Flip`, `RecognizePicture`.
+
+### Changed
+
+- **JPEG decoding, for every command**: colour is rebuilt with
+  libjpeg-turbo's chroma upsampling and colour tables instead of the
+  nearest chroma sample, so JPEGs decode within a few levels of what
+  Pillow and other libjpeg-based tools give (previously up to 68 levels
+  apart). The remaining difference is filed as T-08.
+- `Paste` onto a classic screen now converts an asset in another palette
+  to ZXPAL0 instead of refusing it.
+- `zx scr compare` accepts screen files on either side.
+
+## [0.12.0] - 2026-11-14
+
+### Added
+
+- **The rest of the Spectrum Next graphics formats in `pkg/zxn` and
+  `zx next`**, each checked byte for byte against fixtures the community
+  tools wrote (gfx2next, nextbmp, nextraw):
+  - Palette layouts beyond the 2-byte `.nxp`: 1-byte RGB332, 2-byte GBR444
+    and 1-byte BGR222 (`-layout`, `zx next palette convert`); the Next's
+    standard palette (`palette std`, `-std`); palette minimising (`-min`)
+    (closes T-03, with the embedded palettes below).
+  - A fourth rounding mode, `distance`, which is gfx2next's default.
+  - Layer 2 bitmaps (`zx next bitmap`): 256x192, 320x256 and 640x256, row
+    or column order, with an embedded or separate palette; LoRes 128x96 at
+    8 and 4 bits.
+  - Timex HiRes and HiColour screens (`zx next timex`), HiColour encoding
+    choosing each 8x1 span's colours.
+  - Tiles, tilemaps and blocks (`zx next tiles`): 8-, 4- and 1-bit tiles of
+    any size, dropping repeated, mirrored and turned tiles with the
+    matching attribute bits, 8- and 16-bit maps in either order, tile and
+    palette offsets, and blocks of tiles; `tiles decode` draws a map with
+    its attributes applied.
+  - Hardware sprite attributes (`zx next attrs`, `SpriteAttr`): anchor and
+    relative sprites, four or five bytes each, to and from JSON (closes
+    T-02).
+  - Sprite sheets: `-dedup` and `-pad` on encode, `-range` and `-split`
+    (one PNG per pattern) on decode.
+- **A colour reducer**, `zxn.Reduce`: an image with more colours than fit is
+  reduced by median cut over its RGB333 histogram, optionally with
+  Floyd-Steinberg dithering (`-dither fs`), and transparent pixels can take
+  a chosen index (`-transparent`); `-match` maps an image onto a given
+  palette instead (closes T-01).
+- Register items T-04 (layouts still to check on hardware), T-05 (ZX0
+  compression speed), T-06 (gfx2next options not yet covered) and T-07
+  (MANIFEST.sha256 is not regenerated).
+- **`pkg/nex` and `zx next nex info|extract|build`**: NEX files, V1.2 and
+  V1.3 (loading screens and their palette, copper code, checksum, appended
+  data). Six files sjasmplus wrote are read and rebuilt byte for byte, from
+  the package and from `extract` followed by `build`.
+- **`pkg/zx0` and `zx zx0`**: ZX0 compression and decompression, v2,
+  classic (as gfx2next writes), backwards and quick, ported from the
+  reference compressor and producing its bytes.
+- **BMP input** for every image-reading command: `pkg/scr` registers a
+  decoder for uncompressed BMPs at 1, 4, 8, 16, 24 and 32 bits, and an
+  indexed BMP keeps its palette.
+- `zx info` recognises NEX files by signature, and `.nxp`, `.spr`, `.nxi`,
+  `.sl2` and `.slr` files by extension.
+- `scr.ULAColor`, the Spectrum colour of an index at a brightness.
+
+### Changed
+
+- `zx next sprite encode -palette` now always writes the palette. For an
+  image that is not indexed it used to name a palette to match against;
+  that is now `-match`, which maps to the nearest colours instead of
+  refusing colours the palette lacks. An image that is not indexed no
+  longer needs a palette at all: its colours are chosen.
+- `zx next palette encode` takes the shared colour flags (`-layout`, `-std`,
+  `-min`, `-dither`, ...) and chooses colours for an image with too many.
+
+### Fixed
+
+- The `pkg/zxn` documentation called nearest rounding gfx2next's default;
+  gfx2next's default is the distance search, now `RoundDistance`.
+
+## [0.11.0] - 2026-11-14
+
+### Added
+
+- **`pkg/zxn` and `zx next`: ZX Spectrum Next palettes (`.nxp`) and
+  hardware sprite patterns (`.spr`)**, folded in from zenpal, a separate
+  palette and sprite tool that was never published. `zx next palette
+  info|decode|encode` and `zx next sprite info|decode|encode` read, draw and
+  write them; an indexed image keeps its own palette and pixel indices,
+  any other image is matched against a palette.
+  - The output matches the community tools byte for byte, checked against
+    fixtures they wrote: gfx2next for palettes and 8- and 4-bit sprites,
+    nextbmp/nextraw for palettes rounded down or up (gfx2next reduces a
+    palette colour twice in those modes, moving it a further step).
+  - New over zenpal: making sprites from an image (`sprite encode`), the
+    rounding modes, and a rendered sprite sheet with a transparent index.
+- **A work register** (`docs/TRACKING.md`, `docs/RESOLVED.md`), starting
+  with zenpal's three open items: a colour reducer for images over 256
+  colours (T-01), sprite attribute tables (T-02), other palette layouts
+  (T-03).
+
+### Fixed (relative to zenpal)
+
+- 8-bit channels were reduced to 3 bits by truncation, which brightens:
+  0xC8 became level 6 (219) instead of the nearest, 5 (182). They are now
+  rounded to the nearest level by default.
+- Reading a palette dropped bit 7 of each entry's second byte, the Layer 2
+  priority bit, so a round trip cleared it. It is now kept.
+
+## [0.10.0] - 2026-11-14
+
+### Added
+
+- `zx scr palette <zxpalN> [-o file.csv|file.png]`: a ZXPAL palette's
+  registers as a table, a CSV, or a PNG of swatches.
+- `zx scr compare <a> <b>`: counts the pixels where two images differ and
+  exits non-zero if any do; a 256x192 image is doubled to compare with a
+  512x384 one.
+- `--resize fill` (alias `cover`), and `ResizeFill` in `pkg/scr`: scale to
+  cover and crop the overflow equally from both sides; shrinking averages
+  the source area under each target pixel instead of sampling it.
+
+## [0.9.0] - 2026-11-14
+
+### Added
+
+- **ZXMODE screen modes and ZXPAL palettes** in `pkg/scr` and `zx scr`,
+  for the ZXMODE video specification for the Spectrum family: the classic
+  mode ZXMODE0, the linear modes ZXMODE1 (256x192) and ZXMODE2 (512x384),
+  and the five palettes ZXPAL0 to ZXPAL4, including ZXPAL3 and ZXPAL4 with
+  two attribute bytes per cell.
+  - `Palette` generates each palette's registers from the specification's
+    rules; a test checks ZXPAL4 against the published register table.
+  - `Picture`, `EncodePicture`, `DecodePicture`, `PictureLen`: a screen in
+    any mode and palette, its stored form (`.scr` for ZXMODE0, the linear
+    page layout for ZXMODE1 and ZXMODE2) and rendering.
+  - `EncodePicture` is the specification's reference encoder (best pair of
+    register colours per cell, dithered in linear light). On the
+    specification's test scene and 22 photographs it gives the same picture
+    as the specification's Python reference, pixel for pixel, in every
+    palette, about ten times faster. Linear-light values are tabulated,
+    because Go's `math.Pow` differs from the reference in the last bit for
+    88 of the 256 codes, and products are kept from fusing into
+    multiply-adds, which Go does on arm64.
+  - `zx scr encode --mode --palette` writes `.scr`, `.zm1`, `.zm2`, or
+    appends to a `.cut`; `zx scr decode` reads them, with `--palette` and
+    `--flash`; `zx scr cut --palette` tags assets cut from a ZXPAL1 or
+    ZXPAL2 screen; `zx scr ls` shows the palette.
+  - `FitTo` resizes to any size; `Fit` is `FitTo` at 256x192.
+- **ZCUT version 2**: each asset records its palette, and an asset in
+  ZXPAL3 or ZXPAL4 stores two attribute planes (ink, then paper). A
+  collection of ZXPAL0 assets is still written as version 1, byte for byte
+  as before, and version 1 files read as ZXPAL0. `Paste` refuses a
+  two-byte asset, which a classic screen cannot hold.
+
+### Unchanged
+
+- `zx scr encode` without `--mode` or `--palette` uses the classic
+  converter as before. That converter posterises before choosing colours,
+  which turns normal colours (0xC8) into bright ones; the reference encoder
+  with `--palette zxpal0` keeps both.
+
 ## [0.8.6] - 2026-09-02
 
 ### Fixed

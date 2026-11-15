@@ -22,6 +22,8 @@ For the programmatic interface behind these tools, see the
   - [zx pzx](#zx-pzx)
   - [zx basic](#zx-basic)
   - [zx scr](#zx-scr)
+  - [zx next](#zx-next)
+  - [zx zx0](#zx-zx0)
   - [zx snap](#zx-snap)
   - [zx rzx](#zx-rzx)
   - [zx convert](#zx-convert)
@@ -238,8 +240,8 @@ positional arguments.
 zx <command> [arguments]
 ```
 
-Commands: `tap`, `tzx`, `pzx`, `basic`, `scr`, `snap`, `rzx`, `convert`,
-`edit`, `build`, `info`, and `version`.
+Commands: `tap`, `tzx`, `pzx`, `basic`, `scr`, `next`, `zx0`, `snap`, `rzx`,
+`convert`, `edit`, `build`, `info`, and `version`.
 Running any command with no arguments prints its own help.
 
 Throughout, addresses may be written in hexadecimal (`0x8000` or `$8000`) or in
@@ -351,65 +353,448 @@ keyword case. `detokenise` does the reverse, printing to standard output unless
 ### zx scr
 
 ```
-zx scr encode [flags] <image>              PNG/JPEG/GIF -> .scr
-zx scr decode [flags] <file.scr>           .scr -> PNG
-zx scr crop   [flags] <image|.scr>         crop a region (or sprite) to PNG
-zx scr cut    [flags] <file.scr>           extract a sub-region into a .cut asset collection
-zx scr paste  [flags] <collection:name> <target.scr>   paste an asset into a screen
-zx scr ls     <file.cut>                   list a .cut collection's assets
-zx scr atlas  [flags] <file.cut>           render a collection as a labelled contact sheet
+zx scr encode   [flags] <image>               image -> .scr, .zm1, .zm2 or a .cut asset
+zx scr decode   [flags] <screen>              .scr, .zm1 or .zm2 -> PNG
+zx scr fit      [flags] <image>               fit an image as encode would, to PNG
+zx scr crop     [flags] <image|screen>        crop a region (or sprite) to PNG
+zx scr cut      [flags] <screen>              extract a sub-region into a .cut asset collection
+zx scr paste    [flags] <collection:name> <screen>   paste an asset into a screen
+zx scr ls       <file.cut>                    list a .cut collection's assets
+zx scr atlas    [flags] <file.cut>            render a collection as a labelled contact sheet
+zx scr flip     -h|-v [flags] <screen|file.cut|image>   mirror a screen, assets or an image
+zx scr convert  -to <zxpalN> [flags] <file.cut|screen>  rewrite attributes for another palette
 zx scr fromsnap [flags] <file.sna|file.z80>   extract a snapshot's display file as .scr
-zx scr ocr    [flags] <image|.scr>         recognise on-screen text as plain text
+zx scr ocr      [flags] <image|screen>        recognise on-screen text as plain text
+zx scr palette  [-registers f] [-banks] [-o file.csv|file.png] <zxpalN>   list a palette's registers
+zx scr fitregs  -add <n> -o <file.csv> [flags] <picture>...   fit colours to add to a palette
+zx scr compare  [-metric m] <a> <b>           compare two images or screens
 ```
 
 A `.scr` file is the raw ZX Spectrum display: 6912 bytes, the pixel bitmap
 followed by the per-8x8-cell colour attributes, exactly as they sit in
 Spectrum RAM at `0x4000`-`0x5AFF`. `encode` and `decode` convert to and from
-ordinary images, `crop` extracts a region (or, for a `.scr`, a sprite's
-bounding box) as PNG, and `fromsnap` pulls the display straight out of a
-snapshot without needing a running machine.
+ordinary images (PNG, JPEG, GIF or BMP), `crop` extracts a region (or, for a
+screen, a sprite's bounding box) as PNG, and `fromsnap` pulls the display
+straight out of a snapshot without needing a running machine.
 
-`cut`, `paste`, `ls`, and `atlas` manage `.cut` files: named collections of
-extracted regions (sprites, tiles, UI panels) pulled from one or more `.scr`
-screens, with sub-region reuse across a project in mind. `cut` adds a named
-region to a collection (creating it if it doesn't exist); `paste` composites
-a collection's asset back onto a target screen at a given position, with a
-bit operation (`or`/`and`/`copy`/`xor`) and an optional mask asset for
-non-rectangular shapes; `ls` lists a collection's contents; `atlas` renders
-the whole collection as a labelled contact-sheet PNG for a visual overview.
+`cut`, `paste`, `ls`, `atlas`, `flip` and `convert` manage `.cut` files:
+named collections of extracted regions (sprites, tiles, UI panels) pulled
+from one or more screens, with sub-region reuse across a project in mind.
+`cut` adds a named region to a collection (creating it if it doesn't
+exist); `paste` composites a collection's asset back onto a target screen
+at a given position, with a bit operation (`or`/`and`/`copy`/`xor`) and an
+optional mask asset for non-rectangular shapes; `ls` lists a collection's
+contents; `atlas` renders the whole collection as a labelled contact-sheet
+PNG for a visual overview; `flip` mirrors assets, and `convert` rewrites
+their attributes for another palette.
 
-`ocr` recognises the text on a screen — matching each 8x8 character cell
-against the real Spectrum ROM font — and prints it as plain text. This
-exists for driving emulators through captured screenshots: an automated
-session can send input, capture the screen, and read back exactly what
-printed, rather than a human reading each captured image by eye. A `.scr`
-file needs no further flags (it is always exactly the native 256x192
-pixels); an arbitrary screenshot — an emulator window, scaled and offset
-within a larger capture — needs `--origin` (the display's top-left pixel
-within the image) and `--scale` (pixels per emulated pixel) to say where the
-256x192 display actually sits. Recognition matches each cell against the
-standard 96-glyph ROM set (codes 32-127); content outside that set —
-box-drawing borders, UDGs, decorative graphics — is matched to its nearest
-visual approximation rather than skipped, so garbage characters in a
-non-textual region of the screen are expected, not a bug.
+#### ZXMODE modes and ZXPAL palettes
 
-Example — read the text off a captured CSpect window, rendered at `-w3`
-(3x scale, with the classic 32-pixel border also scaled 3x before any
-window chrome):
+The ZXMODE video specification for the Spectrum family adds two linear
+screen modes to the classic one and five palettes. The
+[ZXMODE handling manual](ZXMODE-HANDLING.md) walks through them with a
+worked example; this section is the reference.
+
+| `--mode` | Picture | Stored form | File |
+| --- | --- | --- | --- |
+| `zxmode0` | 256x192, classic interleaved layout | 6912 bytes, as a `.scr` | `.scr` |
+| `zxmode1` | 256x192, linear | bitmap, then the attribute plane(s): 6912 or 7680 bytes | `.zm1` |
+| `zxmode2` | 512x384, linear | two half-screen pages, top then bottom: 27648 or 30720 bytes | `.zm2` |
+
+| `--palette` | Registers | Attribute |
+| --- | --- | --- |
+| `zxpal0` | 16: the Spectrum colours | one byte, classic (flash, bright, paper, ink) |
+| `zxpal1` | 32: the Spectrum colours in two banks, 16 greys in two more | one byte; bits 7-6 select the bank |
+| `zxpal2` | 32: the eight colours at four levels | one byte; bits 7-6 select the level |
+| `zxpal3` | 64: twelve hues and four greys at four levels | two bytes, ink register then paper register |
+| `zxpal4` | 112: ZXPAL3 plus tones, tints and shades | two bytes, as ZXPAL3 |
+
+`zxmode0` takes the one-byte palettes only. In the linear modes a two-byte
+palette stores two attribute planes after the bitmap, ink then paper.
+
+A screen file does not record its palette, so every command that reads one
+(`decode`, `crop`, `ocr`, `cut`, `paste`, `flip`, `convert`, `compare`)
+takes `--mode` (default from the extension: `.zm1`, `.zm2`, otherwise
+`zxmode0`), `--palette` (default `zxpal0`) and `--registers`. A two-byte
+file read without `--palette` is refused with a hint, and `zx info` on a
+`.zm1` or `.zm2` says which palettes its size fits.
+
+**Loaded registers.** The palette registers are loadable (Part 5 of the
+specification), so a program may show a screen in colours other than the
+palette's reset values. `--registers file.csv` names the register table a
+screen is meant for, for encoding, decoding and every command above. The
+CSV has a header and one row per register; the colour comes from columns
+`r`, `g` and `b` (or `hex`), and the register number from `register`,
+`slot` or `index` (or the row's position). `zx scr palette` writes one
+(`-o file.csv`, from the reset values or from `--registers`), and the
+specification's `data/zxpalN_registers.csv` files read as they are.
+
+**Encoding.** `--mode`, `--palette` or `--registers` selects the
+specification's reference encoder: for each 8x8 cell it chooses the pair of
+register colours that best covers the cell and dithers between them in
+linear light. It produces the same picture, pixel for pixel, as the
+specification's own reference implementation. The classic converter used
+without these flags posterises first, which turns normal colours into
+bright ones; the reference encoder with `--palette zxpal0` keeps both.
+
+An output ending in `.cut` appends the picture to a ZCUT collection as one
+asset (`--name`, default the input's base name).
 
 ```
-zx scr ocr --origin=256,112 --scale=3 screenshot.png
+zx scr encode photo.jpg --resize fill --filter lanczos --mode zxmode2 --palette zxpal4 -o photo.zm2
+zx scr decode photo.zm2 --palette zxpal4 -o check.png
+zx scr encode photo.jpg --resize bestfit --mode zxmode1 --palette zxpal2 -o pics.cut --name title
+zx scr encode photo.jpg --resize fill --mode zxmode0 --palette zxpal1 -o classic.scr
+zx scr encode photo.jpg --resize fill --mode zxmode2 --palette zxpal4 --registers mine.csv -o photo.zm2
 ```
 
-Example — read a `.scr` file directly, no geometry needed:
+**Fitting.** An image that is not the screen's size needs `--resize`:
+
+| `--resize` | Effect |
+| --- | --- |
+| `stretch` | scale to fill, ignoring aspect ratio |
+| `bestfit` | scale to fit, preserving aspect, padding the border with `--fillattr`'s paper |
+| `centre` | no scaling; centre, cropping or padding |
+| `fill` (`cover`) | scale to cover, preserving aspect, cropping the overflow |
+
+`--filter lanczos` scales with Pillow's Lanczos resampler instead of the
+default (bilinear, or an area filter when `fill` shrinks), and
+`--centering x,y` places `fill`'s crop (each 0 to 1; 0.5,0.5 centres it).
+`--trim n` removes a scan margin of n pixels from every edge first, and
+`--grey` converts the fitted picture to luminance as the specification does
+(ITU-R 601, Pillow's `convert("L")`). Together they are the specification's
+picture fit: `--resize fill --filter lanczos` gives, byte for byte, the
+512x384 picture its tools produce from the same pixels (the picture table
+in `pictures/README.md` gives each picture's trim and centring). `zx scr
+fit` writes the fitted picture as PNG (`--size`, default 512x384), to look
+at or to compare an encoding against.
+
+JPEG colour is rebuilt as libjpeg-turbo (behind Pillow) rebuilds it, with
+its chroma interpolation, rather than from the nearest chroma sample, so a
+JPEG decodes to within a level or so of what the specification's tools
+see; the remaining differences come from the two decoders' inverse DCTs.
+
+**Experimental encoder options.** Part 4 of the specification lists
+untested ways an encoder could improve on the reference one; three are
+here, each leaving the reference encoder when used:
+
+| Flag | Effect |
+| --- | --- |
+| `--diffuse f` | spreads each cell's colour error, times f (0 to 1), into the cells not yet encoded, as Floyd-Steinberg spreads a pixel's; the encoding then runs on one CPU |
+| `--flat n` | fills cells whose pixels spread less than n (RMS, 0-255) with one colour instead of dithering |
+| `--linear-pairs` | chooses each cell's pair by distance in linear light rather than sRGB |
+
+On the specification's 22 colour pictures, fitted as above, the mean error
+(blurred RMS, below) came out as follows:
+
+| Palette | Reference | `--diffuse 0.5` | `--diffuse 1` | `--flat 4` | `--linear-pairs` |
+| --- | --- | --- | --- | --- | --- |
+| ZXPAL0 | 31.20 | 22.57 | 22.23 | 34.56 | 45.39 |
+| ZXPAL2 | 20.79 | 17.35 | 18.39 | 21.90 | 31.04 |
+| ZXPAL4 | 8.67 | 7.55 | 7.63 | 10.82 | 11.96 |
+
+Diffusing half the error lowers the error by 13% (ZXPAL4) to 28% (ZXPAL0),
+and also the lighter-blur error that keeps more fine detail. Filling flat
+cells and choosing pairs in linear light both made it worse, as measured,
+and linear-light pairs with half diffusion was worse than half diffusion
+alone (28.62, 23.58 and 10.17).
+
+`--penalty p` sets the weight of the span term in each pair's score
+(the reference encoder's is 0.204; a larger one favours pairs of closer
+colours, a smaller one wider pairs and more dithering). The output is
+still a screen.
+
+**Trying palette designs.** Two encode flags take the encoder beyond what
+a screen file can hold, for weighing palette ideas as the specification
+did; the output is then a PNG to look at and measure (`-o file.png`), not a
+screen:
+
+| Flag | Effect |
+| --- | --- |
+| `--banks file.csv` | encodes over these colours instead of a palette's: one row per colour, columns `bank`, `r`, `g`, `b` (or `hex`); each cell takes its two colours from one bank. Without a `bank` column every colour is in one bank, as in ZXPAL3 and ZXPAL4 |
+| `--cell WxH` | cells of another size (`4` for 4x4), which must divide the picture. 4x4 cells dither with the 4x4 Bayer matrix, other sizes with the 8x8 one laid over the whole picture, as the specification's tools do |
+
+`zx scr palette zxpalN --banks -o file.csv` writes a palette's banks in
+the encoder's order, and encoding over that file gives the palette's own
+encoding pixel for pixel. 4x4 cells, cells 4 wide and 8 tall, and other
+penalties give the pictures the specification's `zxcommon.render` and
+`zxfast.render_fast` give.
+
+`zx scr fitregs` is the specification's register search
+(`tools/z4_palette_search.py`): it adds `--add n` colours to ZXPAL3 or
+ZXPAL4 (`--palette`, `--registers`) or to a one-bank table (`--banks`),
+chosen so that the pixels of the given pictures lie nearer to some colour.
+It blurs each picture by 1.5, samples its pixels, picks the colours
+greedily from candidates drawn from the sample, each time the one that
+most reduces the squared distance to the nearest colour, and refines them
+by k-means with the base colours fixed. It writes the base colours and the
+new ones as one bank, for `encode --banks`, and prints how far the sample
+lies from its nearest colour before and after. Its random draws are its own
+and seeded (`--seed`), so a fit repeats exactly but its colours are not the
+Python script's. The pictures are used as they are: fit them first.
+
+Run as the specification ran it, on its ten development pictures in two
+folds of five (each fold's pictures encoded with colours fitted to the
+other fold), the mean error came out as follows:
+
+| Colours | ZXPAL3 | +8 | +16 | +32 | +48 |
+| --- | --- | --- | --- | --- | --- |
+| `zx scr fitregs` | 13.16 | 10.14 | 9.23 | 8.58 | 7.95 |
+| the specification (section 17) | 13.16 | 10.28 | 9.42 | 8.47 | 7.91 |
 
 ```
-zx scr ocr screen.scr
+zx scr palette zxpal4 --banks -o zxpal4_banks.csv
+zx scr encode fitted.png --mode zxmode2 --banks zxpal4_banks.csv --cell 4 -o c4.png
+zx scr fitregs --palette zxpal3 --add 16 -o z3_16.csv dev/*.png
+zx scr encode test.png --mode zxmode2 --banks z3_16.csv -o test_16.png
+zx scr compare --metric blur test.png test_16.png
 ```
 
-Run `zx scr -h` for the full flag reference, including `crop`'s pixel- vs
-cell-based region syntax and `--auto` sprite-extent detection, and `cut`'s
-attribute and mask options.
+**Comparing.** `compare` counts the pixels where two images differ and
+exits non-zero if any do; a 256x192 image is doubled to compare it with a
+512x384 one, as ZXMODE1 appears on the ZXMODE2 raster. Either side may be a
+screen file. `--metric` gives the specification's measures instead:
+
+| `--metric` | Measure |
+| --- | --- |
+| `blur` | the specification's error: RMS difference (0-255) after a Gaussian blur of 1.5 pixels per channel, computed as its tools compute it (Pillow's blur), so the numbers match theirs |
+| `light` | the same with a blur of 0.75 |
+| `blur=<sigma>` | any other blur |
+| `rms` | no blur |
+| `ssim` | SSIM, as scikit-image computes it with its defaults |
+| `all` | all of the above |
+
+```
+zx scr fit photo.jpg --resize fill --filter lanczos -o fitted.png
+zx scr encode fitted.png --mode zxmode2 --palette zxpal4 -o photo.zm2
+zx scr compare --metric blur fitted.png photo.zm2 --palette zxpal4
+```
+
+**Assets and palettes.** A ZCUT collection records, for every attributed
+asset, its palette (which fixes the attribute format: ZXPAL0's classic
+byte, ZXPAL1's and ZXPAL2's banked byte, or ZXPAL3's and ZXPAL4's ink and
+paper register planes) and, when it was cut from a screen with loaded
+registers, its own register table, so it renders and converts as it was
+drawn. Version 1 files are ZXPAL0 throughout, version 2 adds palettes and
+two-byte attributes, version 3 adds register tables; each collection is
+written at the lowest version that holds it.
+
+`cut` reads any screen (`--mode`, `--palette`, `--registers`) and keeps a
+cell-aligned region's attributes in its palette. `paste` writes an
+attributed asset's attributes at a cell-aligned position and, when the
+asset's palette or registers differ from the target's, converts them first
+and says so. `convert --to <zxpalN>` (with `--to-registers`) does the same
+conversion on its own, for one asset (`--name`) or a whole collection, or
+for a screen (`--to-mode` may switch it between `zxmode0` and `zxmode1`,
+which share a size). The bitmap is kept; each cell takes the target colours
+nearest its own ink and paper, weighted by how many of its pixels each
+covers, and within one bank for a one-byte palette, whose ink and paper
+share a bank. A colour the target holds exactly is kept exactly; flash is
+kept only from ZXPAL0 to ZXPAL0.
+
+`flip -h` mirrors left to right and `flip -v` top to bottom: a screen
+(written back in its own format), a collection's assets (all, or
+`--name`), or an image (written as PNG). Attribute cells move with their
+pixels.
+
+```
+zx scr cut title.zm2 --palette zxpal4 --cells 2,2,8,4 --name logo -o ui.cut
+zx scr paste ui.cut:logo game.scr --at 64,16 --op copy
+zx scr convert ui.cut --to zxpal1 -o ui_zxpal1.cut
+zx scr flip ui.cut --name logo -h -o ui_mirrored.cut
+```
+
+`palette` prints a palette's registers (number, hex, red, green, blue), or
+writes them as CSV or as a PNG of swatches, one row per bank or level;
+`--registers` shows a loaded table instead of the reset values.
+
+```
+zx scr palette zxpal4 -o zxpal4.png
+zx scr compare expected.png rebuilt-from-simulation.png
+```
+
+### zx next
+
+```
+zx next palette info    [-layout l] <file>
+zx next palette decode  [-layout l] [-o file.png] <file>
+zx next palette encode  [colour flags] -o file.nxp <image>
+zx next palette convert -to l [-from l] [-round m] -o out <file>
+zx next palette std     [-layout l] -o file.nxp
+zx next sprite  info    [-depth 8|4] <file.spr>
+zx next sprite  decode  [-depth 8|4] [-palette f] [-transparent n] [-per-row n] [-range a-b] [-split dir] -o file.png <file.spr>
+zx next sprite  encode  [-depth 8|4] [-dedup] [-pad n] [colour flags] -o file.spr <image>
+zx next attrs   encode  [-fixed5] -o file.bin <file.json>
+zx next attrs   decode  [-fixed5] [-o file.json] <file.bin>
+zx next bitmap  info    <file.nxi>
+zx next bitmap  decode  [-mode m] [-palette f] [-transparent n] -o file.png <file.nxi>
+zx next bitmap  encode  -mode m [-embed] [-resize r] [colour flags] -o file.nxi <image>
+zx next timex   decode  -mode hires|hicolour [-ink n] -o file.png <file>
+zx next timex   encode  -mode hires|hicolour [-ink n] [-resize r] -o file <image>
+zx next tiles   encode  [tile flags] [colour flags] -o base <image>
+zx next tiles   decode  [-size WxH] [-depth n] [-map f -map-size WxH ...] -o file.png <file.nxt>
+zx next nex     info    <file.nex>
+zx next nex     extract -o dir <file.nex>
+zx next nex     build   [flags] -o file.nex
+```
+
+ZX Spectrum Next graphics and program files. Every Next colour is 9-bit RGB333,
+three bits each of red, green and blue. The [Next handling manual](NEXT-HANDLING.md)
+works through them for a small game; this section is the reference.
+
+**Palettes.** A palette file is a list of colours with no header. Four
+layouts are read and written (`-layout`, `-from`, `-to`):
+
+| Layout | Bytes per colour | Holds | Written by |
+|---|---|---|---|
+| `rgb333` (default) | 2 | RGB332, then the low blue bit in bit 0 (bit 7, the Layer 2 priority bit, is kept as read) | gfx2next, nextraw: the usual `.nxp` |
+| `rgb332` | 1 | RRRGGGBB; the hardware shows the missing blue bit as the OR of the other two | gfx2next `-pal-rgb332` |
+| `gbr444` | 2 | GGGGBBBB then xxxxRRRR | gfx2next `-pal-gbr444` |
+| `bgr222` | 1 | xxBBGGRR, the Master System layout | gfx2next `-pal-bgr222` |
+
+`palette std` writes the Next's standard palette, in which index i is the
+RGB332 colour i. `palette convert` rewrites a palette in another layout.
+
+**Colour flags.** `palette`, `sprite`, `bitmap` and `tiles encode` share the
+flags that turn an image into palette indices:
+
+| Flag | Meaning |
+|---|---|
+| `-colors n` | palette size (default 256, or 16 at 4 bits per pixel) |
+| `-round m` | how an 8-bit channel becomes 3 bits: `nearest` (the default, and nextbmp's), `floor`, `ceil`, or `distance` (gfx2next's default: the nearest of the 512 colours, the lower on a tie; it differs from `nearest` only on exact ties) |
+| `-dither d` | `none` (default) or `fs` (Floyd-Steinberg), used when colours are chosen or matched |
+| `-transparent n` | pixels less than half opaque take index n; that entry holds the RGB332 colour of n. Layer 2 compares that colour with NextReg 0x14, and sprites compare the index with NextReg 0x4B (4-bit sprites its low four bits), so 0xE3 suits both at their reset values (3 for 4-bit sprites); the tilemap compares its index with NextReg 0x4C |
+| `-match f` | map the image's colours to the nearest of this palette's (`-match-layout` gives its layout) |
+| `-std` | map onto the standard palette (8 bits only; gfx2next `-pal-std`) |
+| `-min` | sort the palette, drop duplicates and renumber the pixels (gfx2next `-pal-min`) |
+| `-palette f` | write the palette here, in `-layout`'s layout |
+
+An indexed image (an indexed PNG or BMP) keeps its own palette in its own
+order, and its pixel indices are used as they are, as gfx2next does; at 4 bits
+per pixel the palette is its first 16 colours and an index its low four bits.
+Any other image is matched (`-match`), mapped to the standard palette (`-std`)
+or reduced: when it has no more distinct RGB333 colours than fit, they are
+kept exactly, in the order they first appear; otherwise colours are chosen by
+median cut, splitting first the group of colours that lies furthest from its
+mean. Images may be PNG, BMP (uncompressed, 1 to 32 bits), GIF or JPEG.
+
+**Sprites.** A `.spr` file is 16x16 patterns one after another: 256 bytes each
+at 8 bits per pixel, 128 at 4 (the left pixel in the high nibble). `-dedup`
+drops patterns identical to an earlier one and says which; `-pad n` fills the
+sheet to n patterns with the `-transparent` index (or 0). `decode -range a-b`
+draws some patterns only, and `-split dir` writes each as its own PNG
+(`dir/NNN.png`, numbered from the file).
+
+**Sprite attributes.** `attrs` converts between a JSON list and the table of
+four or five bytes per sprite that port 0x57 takes. Each JSON object has `x`,
+`y`, `visible`, `pattern` (0-63) and optionally `palette_offset`, `mirror_x`,
+`mirror_y`, `rotate`, `extended` (send the fifth byte), `relative`, `four_bit`,
+`n6` (the upper half of a 4-bit pattern slot), `unified`, `scale_x`, `scale_y`
+(0-3 for 1x to 8x), `relative_palette` and `relative_pattern`. A relative
+sprite's `x` and `y` are its offset from the anchor, -128 to 127. `-fixed5`
+writes five bytes for every sprite (setting each E bit, so a port 0x57 upload
+stays in step). The layout follows the Next's documentation; it has not been
+checked against hardware here.
+
+**Bitmaps.** `bitmap` reads and writes Layer 2 and LoRes screens (`.nxi`,
+`.sl2`, `.slr`): raw pixels with no header, optionally preceded by their
+palette (`-embed`; `decode` finds an embedded one from the file's size).
+
+| Mode | Size | Bits | Stored | Bytes |
+|---|---|---|---|---|
+| `256x192` | 256x192 | 8 | row by row | 49152 |
+| `320x256` | 320x256 | 8 | column by column | 81920 |
+| `640x256` | 640x256 | 4 | column by column, two pixels per byte | 81920 |
+| `lores` | 128x96 | 8 | row by row | 12288 |
+| `lores4` | 128x96 | 4 | row by row | 6144 |
+
+`320x256` and `640x256` files are the same size, so `decode` takes a 81920-byte
+file as `320x256` unless `-mode 640x256` says otherwise. An image of another
+size needs `-resize` (`stretch`, `bestfit`, `centre` or `fill`, as for `zx scr
+encode`).
+
+**Timex screens.** `timex` handles the two Timex modes the Next shares: HiRes,
+512x192 in one ink colour (`-ink`, 0-7) and its complement as paper, and
+HiColour, 256x192 with an attribute for every 8x1 pixels. Both files are 12288
+bytes, the screens at 0x4000 and 0x6000 one after the other (for HiRes, the
+even byte columns and then the odd), so `-mode` is always needed. HiColour
+encoding chooses each 8x1 span's ink, paper and brightness for the least
+error.
+
+**Tiles.** `tiles encode` cuts an image into tiles (`-size`, default 8x8) and
+writes `base.nxt` (the tiles: 8, 4 or 1 bits per pixel, `-depth`), `base.nxm`
+(the map) and, with `-block WxH`, `base.nxb` (blocks of tile indices, the map
+then holding block indices):
+
+| Flag | Meaning (gfx2next's equivalent) |
+|---|---|
+| `-dedup d` | `none` keeps every tile; `repeat` drops repeats, `mirror` also mirrored ones, `rotate` also turned ones; a mirrored or turned match is recorded in the map entry's attribute bits (`-tile-norepeat`, `-tile-nomirror`, `-tile-norotate`) |
+| `-map16` | two bytes per map entry: tile index, then the attribute byte (palette offset in bits 7-4, X mirror, Y mirror, rotate, index bit 8); needed for attributes and for more than 256 tiles (`-map-16bit`) |
+| `-map-columns` | write the map column by column (`-map-y`) |
+| `-offset n`, `-pal-offset n` | add n to every tile index; set every entry's palette offset (`-tile-offset`, `-tile-pal`) |
+| `-block WxH`, `-block-dedup`, `-block16` | blocks of tiles (`-block-size`, `-block-norepeat`, `-block-16bit`) |
+| `-no-map` | write no map |
+
+At 4 bits a tile stores its pixels' low four bits and its map entry's palette
+offset is the high four bits of its last pixel, as gfx2next does, so an indexed
+image drawn in banks of 16 colours keeps its banks. `tiles decode` draws a tile
+set, or with `-map` (and `-map-size`, `-map16`, `-map-columns`, `-offset` as
+written) the map itself, attributes applied.
+
+**NEX files.** `nex info` summarises a NEX file. `nex extract` writes its parts
+to a directory: `header.json`, `palette.nxp`, `screen_<kind>.<ext>`,
+`copper.bin`, `bank_NNN.bin` and `after.bin`. `nex build` puts a file
+together:
+
+| Flag | Meaning |
+|---|---|
+| `-header f` | start from a `header.json` written by `extract` |
+| `-pc a`, `-sp a`, `-entry-bank n` | start address, stack pointer, bank mapped at 0xC000 |
+| `-bank N=file` | a 16 KB bank (a shorter file is padded with zeros); repeatable |
+| `-bin ADDR=file` | a file loaded at a 64 KB address, banks 5, 2 and 0 at 0x4000, 0x8000 and 0xC000; repeatable |
+| `-screen kind=file` | loading screen: `l2`, `l2_320`, `l2_640`, `lores`, `ula`, `hires` or `hicolour`; repeatable |
+| `-palette f` | the 512-byte palette for a Layer 2 or LoRes screen |
+| `-border n`, `-core a.b.c`, `-2mb`, `-hires-colour n` | header fields |
+| `-checksum`, `-copper f`, `-version 3` | V1.3 features; the version rises to V1.3 by itself when one is used |
+| `-append f` | data after the banks |
+
+The layout follows sjasmplus's `SAVENEX`, and the tests rebuild six files
+sjasmplus wrote, byte for byte. One exception: sjasmplus (1.24.0 and earlier)
+stores the V1.3 checksum of the header as it stood when the file was opened,
+not as written at the end, so its checksums do not match their files; `nex
+info` says so, and `nex build` writes the checksum of the file it writes.
+
+The graphics output matches the community tools byte for byte: gfx2next for
+palettes, sprites, Layer 2 bitmaps and tiles, and nextbmp/nextraw for Layer 2
+and for `-round floor` and `ceil`. (In those two modes gfx2next reduces a
+palette colour twice, moving it a further step; `zx next` reduces once, as
+nextbmp does.)
+
+```
+zx next sprite encode hero.png -o hero.spr -palette hero.nxp
+zx next sprite decode hero.spr -palette hero.nxp -transparent 0xE3 -o check.png
+zx next bitmap encode title.jpg -mode 320x256 -resize fill -dither fs -o title.nxi -palette title.nxp
+zx next tiles encode level.png -dedup rotate -map16 -o level -palette level.nxp
+zx next nex build -bin 0x8000=game.bin -pc 0x8000 -sp 0xFF00 -screen l2_320=title.nxi -palette title.nxp -o game.nex
+```
+
+### zx zx0
+
+```
+zx zx0 [-d] [-classic] [-back] [-quick] [-o out] <file>
+```
+
+Compresses (or with `-d` decompresses) a file in Einar Saukas's ZX0 format,
+which the Next tools and many Spectrum programs use. The compressor is a port
+of the reference one, with the same optimal parse, so its bytes are the same as
+`zx0`'s. `-classic` writes the v1 format (`zx0 -c`), which gfx2next writes;
+`-back` compresses backwards for in-place decompression from the end (`zx0
+-b`); `-quick` searches offsets up to 2176 only (`zx0 -q`), faster but
+compressing less. The output defaults to the input with `.zx0` added (or
+removed, with `-d`). Compression takes time in proportion to the file's length
+times the offsets searched (up to 32640): about 3 seconds for 13 KB on an
+ordinary machine, 45 seconds for an 80 KB Layer 2 screen, and much less with
+`-quick`.
 
 ### zx snap
 
@@ -618,10 +1003,12 @@ assembling a complex multi-block tape from a spec like this one.
 zx info <file>
 ```
 
-Identifies a file's format — by signature (TZX, SZX, PZX, and RZX all have
-one) where possible, otherwise by extension — and prints the appropriate
+Identifies a file's format — by signature (TZX, SZX, PZX, RZX and NEX all
+have one) where possible, otherwise by extension — and prints the appropriate
 summary, as `zx tap info`, `zx tzx info`, `zx pzx info`, `zx snap info`,
-or `zx rzx info` would.
+`zx rzx info`, `zx next nex info`, `zx next palette info` (`.nxp`),
+`zx next sprite info` (`.spr`) or `zx next bitmap info` (`.nxi`, `.sl2`,
+`.slr`) would.
 
 ## Conversions in depth
 

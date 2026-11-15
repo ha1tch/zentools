@@ -62,6 +62,10 @@ func main() {
 		err = cmdBuild(args)
 	case "scr":
 		err = cmdSCR(args)
+	case "next":
+		err = cmdNext(args)
+	case "zx0":
+		err = cmdZX0(args)
 	case "version", "-v", "--version":
 		fmt.Printf("zx (zentools) %s\n", version.Version)
 	case "help", "-h", "--help":
@@ -94,6 +98,8 @@ Commands:
   edit    list, extract, delete, or import blocks in a multi-block tape
   build   build a multi-block tape file from a JSON specification
   scr     convert images to/from SCR screen files
+  next    ZX Spectrum Next graphics (palettes, sprites, Layer 2, tiles) and NEX files
+  zx0     ZX0 compression and decompression
   info    auto-detect a file's format and summarise it
   version print the zentools version
 
