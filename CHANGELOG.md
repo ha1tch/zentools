@@ -4,6 +4,54 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.1] - 2026-11-16
+
+Documents only.
+
+### Changed
+
+- **The README is 112 lines** (it was 302): what zentools is, six commands
+  to start from, the tools, one table of the manuals where there were two
+  lists, and the packages. Its tour of one command of everything is the
+  CLI manual's new section "By example", moved as it was; the notes on
+  what `pkg/szx`, `pkg/rzx` and `pkg/pzx` model were already in the
+  library manual and are no longer repeated.
+
+## [0.16.0] - 2026-11-16
+
+### Added
+
+- **`build.EncodeNEX`**: a Spectrum Next executable from a `Request`, with
+  `NEXOptions` for the border and the lowest core version. For a program
+  that has assembled code and wants a `.nex` without building the file by
+  hand; zenas's `build --nex` uses it.
+- **`build.EncodePZX` and `build.EncodePZXFromTAP`**, the PZX counterparts
+  of `EncodeTZX` and `EncodeTZXFromTAP`.
+- **`pzx.EncodeFromTAP` and `pzx.EncodeStandard`**: a PZX of standard-speed
+  blocks with the ROM's timings. This is what `zx pzx make` and
+  `zx convert` did in the command; they call the package now, and their
+  output is the same (the command's round-trip tests pass unchanged).
+- **`(*nex.File).Load`**: bytes into the banks at a 64K address. `zx next
+  nex build -bin` did this itself and calls it now.
+
+## [0.15.0] - 2026-11-16
+
+### Added
+
+- **`pkg/symfile`**: reads the symbol files of other Z80 tools (CSpect
+  maps as SNASM and sjasmplus write them, pasmo and zenas `.sym` files,
+  sjasmplus `--sym` files, z88dk `.map` files) and writes CSpect maps.
+  `Parse`, `WriteCSpectMap`, `Labels`, `Constants`, `Identifier`,
+  `NextPhys`, and `Table`, which holds the names of several files by
+  address. It depends on the standard library only.
+  The package was written in zendis and copied into zenas, which could
+  not share it: zendis's checks depend on zenas, so neither could import
+  the other's. Both depend on zentools, and from zenas 0.14.0 and zendis
+  0.7.0 both use this one; a program that embeds them (ZenZX) can hand
+  one's symbols to the other as data.
+- The library manual has a section for it, and the README and the
+  architecture document list it.
+
 ## [0.14.4] - 2026-11-14
 
 ### Changed

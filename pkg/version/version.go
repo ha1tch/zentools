@@ -6,4 +6,4 @@ package version
 
 // Version is the current version of zentools.
 // This MUST match the contents of the VERSION file.
-const Version = "0.14.4"
+const Version = "0.16.1"

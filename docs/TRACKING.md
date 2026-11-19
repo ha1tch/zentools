@@ -1,4 +1,4 @@
-Version: 0.14.4 · Last reviewed: 2026-11-14
+Version: 0.16.0 · Last reviewed: 2026-11-16
 
 # zentools — open items
 

@@ -3,50 +3,20 @@
 [![test](https://github.com/ha1tch/zentools/actions/workflows/test.yml/badge.svg)](https://github.com/ha1tch/zentools/actions/workflows/test.yml)
 [![cross-build](https://github.com/ha1tch/zentools/actions/workflows/cross-build.yml/badge.svg)](https://github.com/ha1tch/zentools/actions/workflows/cross-build.yml)
 
-A Go library and command-line toolkit for converting and manipulating ZX
-Spectrum file formats: TAP, TZX, PZX, snapshots (`.sna`, `.z80`, `.szx`),
-RZX input recordings, BASIC, `.scr` screens and `.cut` asset collections,
-the ZXMODE screen modes and ZXPAL palettes, and the Spectrum Next's
-graphics and NEX files. No third-party dependencies.
+A Go library and command-line toolkit for ZX Spectrum file formats: tapes
+(TAP, TZX, PZX), snapshots (`.sna`, `.z80`, `.szx`), RZX recordings, BASIC,
+`.scr` screens and `.cut` asset collections, the ZXMODE screen modes and
+ZXPAL palettes, and the Spectrum Next's graphics and NEX files. No
+third-party dependencies.
 
-- **[CLI tools manual](docs/CLI.md)** — every command and flag, with the
-  conversion table and what each conversion costs.
-- **[Tape handling manual](docs/TAPE-HANDLING.md)** — building, combining,
-  and editing multi-block tapes, with a full worked tutorial.
-- **[Sprite handling manual](docs/SPRITE-HANDLING.md)** — screens, tiles,
-  and sprite collections, with a tutorial using real ZX Spectrum artwork.
-- **[ZXMODE handling manual](docs/ZXMODE-HANDLING.md)** — the ZXMODE
-  screen modes and ZXPAL palettes: fitting and encoding pictures,
-  measuring them, loaded registers, assets across palettes and palette
-  design.
-- **[Next handling manual](docs/NEXT-HANDLING.md)** — Spectrum Next
-  palettes, sprites and their attributes, Layer 2, LoRes and Timex
-  screens, tiles and tilemaps, ZX0 compression and NEX files, worked
-  through for a small game.
-- **[Library manual](docs/LIBRARY.md)** — packages, types, and examples.
-
-Beyond tape and snapshot conversion, `zx scr` covers the whole screen and
-sprite side: `encode`/`decode` convert between ordinary images and the
-native 6912-byte `.scr` format, `crop` pulls out a region as PNG, and
-`fromsnap` extracts a display straight out of a snapshot. `cut`, `paste`,
-`ls`, `atlas`, `flip` and `convert` manage `.cut` files — named collections
-of extracted sprites and tiles, pulled from one or more screens in any
-palette, meant for reuse across a project. The same commands handle the
-ZXMODE linear screens (`.zm1`, `.zm2`) and ZXPAL palettes. For those,
-`encode` is the specification's reference encoder, pixel for pixel, and
-`fit` and `compare -metric` reproduce its picture fit and error measures
-exactly. Loaded palette registers, conversion between palettes, error
-diffusion, and tools for trying palette designs (`-banks`, `-cell`,
-`fitregs`) go further. `ocr` recognises the text on a screen against the
-real Spectrum ROM font and prints it as plain text, for driving emulators
-through captured screenshots without a human reading each one by eye.
-
-For the Spectrum Next, `zx next` turns images into palettes, hardware
-sprites, Layer 2 and LoRes screens, Timex screens, and tiles with their
-tilemaps, choosing colours when an image has too many, and draws them all
-back to PNG; it also inspects, unpacks and builds NEX files. Its output
-matches gfx2next, nextbmp, nextraw and sjasmplus byte for byte. `zx zx0`
-compresses with ZX0, as the reference compressor does.
+```sh
+zx tap make game.bin --origin 0x8000 --loader --start 0x8000 -o game.tap
+zx snap make game.bin --start 0x8000 --model 48k --z80 -o game
+zx convert game.tap -o game.tzx
+zx scr encode title.png -o title.scr
+zx next nex build --bin 0x8000=game.bin --pc 0x8000 -o game.nex
+zx info anything.tzx
+```
 
 ## Tools
 
@@ -74,162 +44,29 @@ Full flag reference for all four is in the [CLI tools manual](docs/CLI.md).
 | `zx build`   | build a multi-block tape file from a JSON specification    |
 | `zx info`    | identify and summarise a file                              |
 
-### Usage: the legacy tools
+Three things go beyond conversion. `zx scr` is the whole screen and sprite
+side: images to and from `.scr`, regions cut into `.cut` collections for
+reuse, the ZXMODE linear screens and ZXPAL palettes (its `encode` is the
+specification's reference encoder, pixel for pixel), and `ocr`, which reads
+the text on a screen against the ROM font. `zx next` turns images into the
+Next's palettes, sprites, Layer 2, LoRes and Timex screens and tiles with
+their tilemaps, and builds NEX files; its output matches gfx2next, nextbmp,
+nextraw and sjasmplus byte for byte. `zx zx0` compresses as the reference
+compressor does.
 
-```
-# binary to TAP, named, loading at 0x8000
-maketap --name game --address 32768 game.bin game.tap
+## Documents
 
-# binary to TAP (CODE block)
-totap --binary --name game --address 32768 game.bin game.tap
+| Manual | What is in it |
+|---|---|
+| [CLI tools](docs/CLI.md) | Every command and flag, one of everything by example, the conversion table and what each conversion costs |
+| [Tape handling](docs/TAPE-HANDLING.md) | Building, combining and editing multi-block tapes, with a worked tutorial |
+| [Sprite handling](docs/SPRITE-HANDLING.md) | Screens, tiles and sprite collections, with a tutorial on real Spectrum artwork |
+| [ZXMODE handling](docs/ZXMODE-HANDLING.md) | The ZXMODE screen modes and ZXPAL palettes: fitting, encoding and measuring pictures, palette design |
+| [Next handling](docs/NEXT-HANDLING.md) | Spectrum Next palettes, sprites, screens, tiles and tilemaps, ZX0 and NEX files, worked through for a small game |
+| [Library](docs/LIBRARY.md) | The packages, their types, examples, and what each codec does and does not model |
+| [Architecture](docs/ARCHITECTURE.md) | How the code is organised |
 
-# BASIC text to an auto-running TAP
-totap --basic --name loader --autostart 10 loader.bas loader.tap
-
-# list a tape's blocks; -d adds a hex dump
-loadtap game.tap
-loadtap -d game.tap
-
-# extract a tape's raw data, skipping headers
-loadtap -r game.tap > game.payload
-
-# one TAP to TZX with metadata
-tap2tzx -o game.tzx -m --title "My Game" --author "haitch" --year 2026 game.tap
-
-# several TAPs to one 128K multiload TZX, grouped
-tap2tzx -o game.tzx -128 --multiload --group "Game" part1.tap part2.tap part3.tap
-```
-
-### Usage: zx
-
-```
-# make a TAP from a binary, with a BASIC auto-run loader
-zx tap make game.bin --origin 0x8000 --loader --start 0x8000 -o game.tap
-
-# inspect a tape
-zx tap info game.tap
-
-# combine several TAP files into one -- raw byte concatenation is valid
-# for pure TAP (no container structure of its own); for mixed formats
-# (or TZX/PZX inputs), use zx edit append instead
-zx tap append loader.tap main.tap level1.tap -o game.tap
-
-# wrap a TAP as TZX with archive metadata
-zx tzx make game.tap --title "My Game" --author "haitch" --year 2026 -o game.tzx
-
-# tokenise BASIC source, then read it back
-zx basic tokenise loader.bas -o loader.bin
-zx basic detokenise loader.bin
-
-# build a runnable snapshot from a binary, in any of three formats
-zx snap make game.bin --start 0x8000 --model 48k --sna --z80 --szx -o game
-zx snap info game.z80
-
-# wrap a TAP as PZX, using the standard Spectrum ROM pilot/sync/bit timings
-zx pzx make game.tap --title "My Game" -o game.pzx
-zx pzx info game.pzx
-
-# inspect an RZX input-recording file (frame counts, embedded snapshots)
-zx rzx info session.rzx
-
-# convert between formats (extensions decide source and target)
-zx convert game.tap -o game.tzx              # lossless
-zx convert game.sna -o game.z80              # lossless
-zx convert game.tap -o game.z80 --start 0x8000   # tape to snapshot needs --start
-zx convert game.pzx -o game.tap              # only PULS+DATA pairs using standard
-                                              # ROM timing convert; anything else is dropped
-
-# extract a flat binary -- no headers, no registers, just bytes
-zx convert game.tap -o code.bin                          # first Code-type block
-zx convert game.tap -o code.bin --block-name MAIN         # a specific block, by name
-zx convert game.z80 -o code.bin                          # from the snapshot's own PC
-zx convert game.z80 -o code.bin --org 0x8000 --length 0x2000
-zx convert game128.sna -o bank.bin --bank 6              # a 128K bank not currently paged in
-
-# wrap a flat binary as a tape or snapshot -- the reverse of extraction;
-# --origin supplies what a raw binary has no way to carry itself
-zx convert code.bin -o code.tap --name GAME --origin 0x8000
-zx convert code.bin -o code.sna --origin 0x8000 --start 0x8000
-
-# pull a snapshot back out of an RZX recording (the first embedded one;
-# --org/--length/--bank all apply the same way as for a real snapshot source)
-zx convert session.rzx -o extracted.z80      # same format as embedded, verbatim
-zx convert session.rzx -o extracted.sna      # different format: decode, re-encode
-zx convert session.rzx -o code.bin --length 0x100
-
-# explode a multi-block tape into a directory: one .bin per data block
-# (named after its header, if it has one -- some tapes have bare,
-# headerless data blocks too, e.g. for a custom fast loader) plus a
-# manifest.json describing every block, header and data alike, in order
-zx convert game.tap --outdir extracted/
-
-# list, extract, delete, import, or append blocks in an existing multi-block tape
-zx edit list game.tap                                # plain text
-zx edit list game.tap --json                         # same shape as --outdir's manifest.json
-zx edit extract game.tap --block 3 -o code.bin        # one block's payload
-zx edit extract game.tap --block 0 --raw -o hdr.bin   # the full raw block, for re-importing elsewhere
-zx edit delete game.tap --block 2,3 -o game2.tap      # remove a header+data pair
-zx edit import game.tap --data new.bin --name EXTRA --org 0xA000 -o game2.tzx
-zx edit import game.tap --data hdr.bin --raw --at 0 -o game2.tap  # re-insert a --raw-extracted block
-zx edit append loader.tap main.tzx level.pzx -o combined.tzx  # combine files of DIFFERENT tape
-                                                                # formats -- unlike shell `cat`,
-                                                                # which only works for bare TAP
-
-# build a fresh multi-block tape from a JSON spec -- "file" paths resolve
-# relative to the spec file's own directory, not the current directory
-cat > game.json <<'JSON'
-{
-  "title": "My Game",
-  "blocks": [
-    {"kind": "code", "name": "LOADER", "org": 32768, "file": "loader.bin"},
-    {"kind": "program", "name": "BASIC", "autostart": 10, "file": "basic.bin"}
-  ]
-}
-JSON
-zx build game.json -o game.tzx
-```
-
-`zx edit`/`zx build` operate on a tape's flat *logical* block list -- the loadable header/data blocks themselves, the same list `zx convert`'s own tape normalisation already works with. A TZX's structural blocks (pauses, group markers, `STOP`) and a PZX's own `PAUS`/`BRWS`/`STOP` blocks aren't part of that list and don't survive a `delete`/`import`/`build` round trip -- the same scope boundary `zx convert` already has converting a tape to another tape format.
-
-Screens, pictures and the Spectrum Next:
-
-```
-# identify any file
-zx info game.tzx
-
-# encode an image to a screen and back; bestfit preserves aspect
-zx scr encode logo.png --resize=bestfit --fillattr="paper:black" -o logo.scr
-zx scr decode logo.scr -o logo.png
-
-# extract the screen from a snapshot
-zx scr fromsnap game.z80 -o title.scr
-
-# cut named regions into a .cut collection, list it, render a contact sheet
-zx scr cut --cells 13,3,8,11 --name gem title.scr -o parts.cut
-zx scr cut --cells 2,14,8,5  --name logo title.scr -o parts.cut
-zx scr ls parts.cut
-zx scr atlas parts.cut --scale 4 -o parts-atlas.png
-
-# composite an asset back onto a screen (AND a mask, then OR the data)
-zx scr paste parts.cut:mask --at 96,80 --op and screen.scr -o tmp.scr
-zx scr paste parts.cut:data --at 96,80 --op or  tmp.scr    -o out.scr
-
-# ZXMODE: fit a photograph as the specification does, encode it in ZXPAL4,
-# and measure the result with the specification's error
-zx scr fit photo.jpg --resize fill --filter lanczos -o photo-fit.png
-zx scr encode photo-fit.png --mode zxmode2 --palette zxpal4 -o photo.zm2
-zx scr compare --metric blur photo-fit.png photo.zm2 --palette zxpal4
-
-# Spectrum Next: a Layer 2 screen with its palette, a deduplicated sprite
-# sheet, and a NEX file with the screen as its loading screen
-zx next bitmap encode title.png --mode 320x256 -o title.nxi --palette title.nxp
-zx next sprite encode sprites.png --dedup --transparent 0xE3 -o sprites.spr --palette sprites.nxp
-zx next nex build --bin 0x8000=game.bin --pc 0x8000 --screen l2_320=title.nxi --palette title.nxp -o game.nex
-zx zx0 title.nxi
-```
-
-Flags may appear in any position. See the **[CLI tools manual](docs/CLI.md)** for
-every flag and a full account of the conversions.
+Each has an HTML twin beside it in `docs/`.
 
 ## Install
 
@@ -244,7 +81,10 @@ VERSION=x.y.z`, `make cross-build`; run `make help` for the full list.
 
 ## Library
 
-Fourteen packages, each owning one format family, depending only on the
+Fifteen packages, each owning one format family, depending only on the
+standard library. The [library manual](docs/LIBRARY.md) has the API.
+
+Fifteen packages, each owning one format family, depending only on the
 standard library:
 
 | Package        | Does                                                  |
@@ -262,37 +102,8 @@ standard library:
 | `pkg/nex`      | read and write NEX files                             |
 | `pkg/zx0`      | ZX0 compression and decompression                    |
 | `pkg/bdf`      | read BDF bitmap fonts (the ROM font for `pkg/scr`'s OCR) |
+| `pkg/symfile`  | read and write other tools' symbol files (CSpect maps, pasmo, sjasmplus, z88dk) |
 | `pkg/version`  | the library version constant                         |
-
-`pkg/szx` decodes into and encodes from the same `snapshot.MachineState`
-the SNA/`.z80` codecs use -- a third codec for one neutral type, not a
-separate representation. Its scope covers the CPU/paging/memory state
-every snapshot needs (`ZXSTZ80REGS`/`ZXSTSPECREGS`/`ZXSTRAMPAGE`); the
-zx-state spec's thirty-odd further peripheral block types (AY sound,
-joysticks, disk controllers, and so on) are skipped on read rather than
-modelled, per the spec's own rule for unrecognised blocks -- see the
-package's own doc comment for the exact boundary. `pkg/rzx` fully
-supports the Creator/Snapshot/Recording blocks that make up a working,
-unprotected recording; the DSA security blocks used for tournament
-submissions are read and written verbatim but not cryptographically
-verified. `pkg/pzx` implements all four mandatory block types (`PZXT`/
-`PULS`/`DATA`/`PAUS`) plus the two the spec calls out as
-should-be-supported (`BRWS`/`STOP`); unrecognised block tags are
-preserved as raw bytes rather than dropped, since the spec explicitly
-reserves lowercase tags for custom extensions implementations are
-expected to round-trip.
-
-See the **[library manual](docs/LIBRARY.md)** for the API and examples.
-
-## Documentation
-
-- **[CLI tools manual](docs/CLI.md)**
-- **[Tape handling manual](docs/TAPE-HANDLING.md)**
-- **[Sprite handling manual](docs/SPRITE-HANDLING.md)**
-- **[ZXMODE handling manual](docs/ZXMODE-HANDLING.md)**
-- **[Next handling manual](docs/NEXT-HANDLING.md)**
-- **[Library manual](docs/LIBRARY.md)**
-- **[Architecture](docs/ARCHITECTURE.md)**
 
 ## License
 

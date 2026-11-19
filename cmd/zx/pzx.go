@@ -23,21 +23,6 @@ import (
 	"github.com/ha1tch/zentools/pkg/tap"
 )
 
-// Standard Spectrum ROM save-routine timings, T cycles at 3.5MHz -- the PZX
-// spec's own worked examples (see http://zxds.raxoft.cz/docs/pzx.txt, the
-// PULS and DATA block descriptions).
-const (
-	pilotPulse       = 2168
-	syncPulse1       = 667
-	syncPulse2       = 735
-	bit0Pulse        = 855
-	bit1Pulse        = 1710
-	tailPulse        = 945
-	headerPilotCount = 8063        // leader < 128 (header blocks)
-	dataPilotCount   = 3223        // leader >= 128 (data blocks)
-	interBlockPause  = 3500000 / 2 // ~0.5s: shorter than the real ROM's ~1s gap, plenty for a loader to detect the pause
-)
-
 func cmdPZX(args []string) error {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, `zx pzx - create and inspect PZX images
@@ -91,19 +76,11 @@ func pzxMake(args []string) error {
 }
 
 // encodePZXFromTAPBlocks maps each TAP block to a PULS+DATA(+PAUS) triple
-// using the standard ROM timings, per the PZX spec's own documented mapping
-// for TZX's ID 0x10 (which is byte-for-byte the same block shape TAP uses):
-// "ID 10 - Standard speed data block: Trivially encoded with PULS and DATA
-// blocks."
+// using the standard ROM timings: pzx.EncodeStandard, which has the
+// mapping and the timings since 0.16.0.
 func encodePZXFromTAPBlocks(blocks []tap.Block, title string) ([]byte, error) {
-	f := &pzx.File{Blocks: []pzx.Block{
-		pzx.HeaderBlock{Major: 1, Minor: 0, Title: title},
-	}}
-	for i, b := range blocks {
-		leaderCount := uint16(dataPilotCount)
-		if b.IsHeader {
-			leaderCount = headerPilotCount
-		}
+	std := make([]pzx.StandardBlock, 0, len(blocks))
+	for _, b := range blocks {
 		// tap.Block.Data is documented as "payload between the flag and
 		// the checksum" -- it explicitly excludes both. What actually
 		// needs encoding here is the block's full raw bytes (flag,
@@ -120,27 +97,9 @@ func encodePZXFromTAPBlocks(blocks []tap.Block, title string) ([]byte, error) {
 		raw = append(raw, b.Flag)
 		raw = append(raw, b.Data...)
 		raw = append(raw, b.Checksum)
-
-		f.Blocks = append(f.Blocks,
-			pzx.PulseBlock{Pulses: []pzx.Pulse{
-				{Count: leaderCount, Duration: pilotPulse},
-				{Count: 1, Duration: syncPulse1},
-				{Count: 1, Duration: syncPulse2},
-			}},
-			pzx.DataBlock{
-				InitialLevelHigh: true,
-				BitCount:         uint32(len(raw)) * 8,
-				Tail:             tailPulse,
-				S0:               []uint16{bit0Pulse, bit0Pulse},
-				S1:               []uint16{bit1Pulse, bit1Pulse},
-				Data:             raw,
-			},
-		)
-		if i < len(blocks)-1 {
-			f.Blocks = append(f.Blocks, pzx.PauseBlock{InitialLevelHigh: false, Duration: interBlockPause})
-		}
+		std = append(std, pzx.StandardBlock{Raw: raw, Header: b.IsHeader})
 	}
-	return pzx.Encode(f)
+	return pzx.EncodeStandard(std, title)
 }
 
 func pzxInfo(args []string) error {

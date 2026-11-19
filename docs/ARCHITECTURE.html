@@ -72,6 +72,7 @@ self-consistency. Correctness is the product.</p></li>
 │   ├── nex/         NEX files, the Spectrum Next executable format.
 │   ├── zx0/         ZX0 compression (a port of the reference compressor).
 │   ├── bdf/         BDF bitmap font reader, used internally by scr&#39;s OCR.
+│   ├── symfile/     Symbol files of other tools: CSpect maps, pasmo, sjasmplus, z88dk.
 │   ├── build/       overlay machine code onto a boot state; emit tapes/snapshots.
 │   └── version/     library version constant.
 ├── cmd/             CLI tools over the packages.
@@ -149,14 +150,15 @@ all share the interchange ones.</p>
 <p>A format package imports another only to share a model, never for
 convenience: <code>szx</code> and <code>build</code> use
 <code>snapshot</code>'s machine state, <code>build</code> composes
-<code>tap</code>, <code>tzx</code> and <code>basic</code>,
-<code>scr</code>'s OCR uses <code>bdf</code>, and <code>zxn</code> takes
-the Spectrum ULA colours from <code>scr</code> so they are defined once.
-<code>cmd/</code> imports <code>pkg/*</code>. Otherwise keep the
-packages flat. (The one defensible exception, if it arises: a future
-<code>pkg/spectrum</code> holding shared constants like the XOR checksum
-or memory-map addresses. Not needed yet — TAP and TZX each own their
-small bit of shared knowledge until duplication actually hurts.)</p>
+<code>tap</code>, <code>tzx</code>, <code>pzx</code>, <code>basic</code>
+and <code>nex</code>, <code>scr</code>'s OCR uses <code>bdf</code>, and
+<code>zxn</code> takes the Spectrum ULA colours from <code>scr</code> so
+they are defined once. <code>cmd/</code> imports <code>pkg/*</code>.
+Otherwise keep the packages flat. (The one defensible exception, if it
+arises: a future <code>pkg/spectrum</code> holding shared constants like
+the XOR checksum or memory-map addresses. Not needed yet — TAP and TZX
+each own their small bit of shared knowledge until duplication actually
+hurts.)</p>
 <h2 id="public-api-shape-per-package">Public API shape (per
 package)</h2>
 <p>The naming is uniform so a consumer learns one pattern. Each format

@@ -23,6 +23,7 @@ For the command-line tools built on these packages, see the
 - [pkg/szx](#pkgszx)
 - [pkg/rzx](#pkgrzx)
 - [pkg/build](#pkgbuild)
+- [pkg/symfile](#pkgsymfile)
 - [pkg/version](#pkgversion)
 - [Composing the packages](#composing-the-packages)
 
@@ -46,10 +47,11 @@ format family:
 | `pkg/rzx`       | `.rzx` input-recording files.                                    |
 | `pkg/build`     | Overlaying code onto a boot state to emit artifacts.             |
 | `pkg/bdf`       | BDF bitmap fonts, read for `pkg/scr`'s text recognition.          |
+| `pkg/symfile`   | Symbol files of assemblers and debuggers: CSpect maps, pasmo, sjasmplus and z88dk. |
 | `pkg/version`   | The library version constant.                                    |
 
 The packages do not import one another except that `pkg/build` builds on `tap`,
-`tzx`, `basic`, `snapshot` and `szx`, `pkg/rzx` uses `pkg/snapshot`/`pkg/szx` to
+`tzx`, `pzx`, `basic`, `snapshot`, `szx` and `nex`, `pkg/rzx` uses `pkg/snapshot`/`pkg/szx` to
 decode an embedded snapshot block, `pkg/szx` shares `pkg/snapshot`'s machine
 state, `pkg/scr`'s OCR reads its font with `pkg/bdf`, and `pkg/zxn` takes the
 Spectrum ULA colours from `pkg/scr`. A typical flow runs from source material (a
@@ -238,6 +240,18 @@ round trip, per the spec's own rule for unrecognised tags.
 func Decode(image []byte) (*File, error)
 func Encode(f *File) ([]byte, error)
 ```
+
+A tape of standard-speed blocks, which is what a TAP file is, does not need
+the blocks built by hand:
+
+```go
+func EncodeFromTAP(tapImage []byte, title string) ([]byte, error)
+func EncodeStandard(blocks []StandardBlock, title string) ([]byte, error)
+```
+
+`EncodeFromTAP` gives every TAP block the ROM's leader, sync and bit timings
+and puts a pause between blocks; `EncodeStandard` does the same for blocks
+given as their raw bytes (flag, payload, checksum).
 
 See the package's own doc comments for each block type's fields, and
 [the CLI manual's `zx pzx` section](CLI.md#zx-pzx) for the command-line
@@ -731,7 +745,13 @@ type File struct {
 func Encode(f *File) ([]byte, error)
 func Decode(data []byte) (*File, error)
 func Checksum(file []byte) uint32 // CRC-32C of bytes 512 on, then 0-507
+func (f *File) Load(addr uint16, data []byte) error
 ```
+
+`Load` puts bytes in the banks at a 64K address, as memory is paged when a NEX
+program starts (bank 5 at 0x4000, bank 2 at 0x8000, bank 0 at 0xC000), making
+the banks it needs. It is how assembled code gets into a file without the
+caller working out banks and offsets.
 
 The layout follows sjasmplus's `SAVENEX`, and the tests read six files
 sjasmplus wrote and write them back byte for byte, except for sjasmplus's V1.3
@@ -889,6 +909,9 @@ func EncodeSNA(r Request) ([]byte, error)
 func EncodeZ80(r Request) ([]byte, error)
 func EncodeSZX(r Request) ([]byte, error)
 func Overlay(r Request) (*snapshot.MachineState, error)
+func EncodePZX(r Request) ([]byte, error)
+func EncodePZXFromTAP(tapImage []byte, title string) ([]byte, error)
+func EncodeNEX(r Request, o NEXOptions) ([]byte, error)
 ```
 
 `EncodeTAP` produces a CODE tape; `EncodeTAPWithLoader` prepends a BASIC auto-run
@@ -897,6 +920,12 @@ loader that jumps to `Start`, giving a tape that runs on its own. `EncodeTZX` an
 overlay the code onto the model's boot state and produce a runnable snapshot with
 the program counter at `Start` and the stack pointer at `SP`. `Overlay` returns
 that machine state itself, for a caller that wants another snapshot format.
+`EncodePZX` and `EncodePZXFromTAP` are the PZX counterparts of the TZX pair.
+`EncodeNEX` produces a Spectrum Next executable: the code in the banks that are
+paged in when it starts, `Start` as the program counter and `SP` as the stack
+pointer, with the border colour and the lowest core version in `NEXOptions`
+(2.0.28 when none is given). It does not use `Model`: a NEX file carries no
+machine state. The code must lie between 0x4000 and 0xFFFF.
 
 `Request` also offers `SPWarning`, which returns a non-empty message when the
 stack pointer is positioned where it would collide with the loaded code, and
@@ -918,6 +947,55 @@ req := build.Request{
 z80, err := build.EncodeZ80(req)   // a runnable snapshot
 tape   := build.EncodeTAP(req)     // a CODE tape
 ```
+
+## pkg/symfile
+
+Reads and writes the symbol files other Z80 tools use, so that the names of
+a program can travel between an assembler, a disassembler and a debugger.
+zenas and zendis both build on it, and a program that embeds the two passes
+`[]symfile.Symbol` from one to the other.
+
+Four formats are read, told apart by the file's first line with
+`symfile.FormatAuto`:
+
+| Format | Written by | A line |
+| ------ | ---------- | ------ |
+| `FormatCSpect` | SNASM's `-map`, sjasmplus's `CSPECTMAP`, zenas's and zendis's `--map`; what CSpect's debugger loads with `-map` | `00008000 00008000 00 START` |
+| `FormatPasmo` | pasmo, and zenas's `--sym` | `start		EQU 08000H` |
+| `FormatSjasmplus` | sjasmplus's `--sym` | `start: EQU 0x00008000` |
+| `FormatZ88dk` | z88dk's `.map` | `_main = $8000 ; addr, public, ...` |
+
+One is written, the CSpect map. Its columns are the 16-bit value, the
+physical address (the 8K page times 8192 plus the offset in it), the type
+(`00` a label, `01` an `EQU`, `02` a redefinable value, `FFFFFFFF` unknown)
+and the name, with a local label as `PRIMARY@LOCAL`.
+
+- `Parse(r, format)` reads a file into `[]Symbol`: name, value, the
+  physical address where the format has one, and a `Kind` (label, constant,
+  or unknown where the format does not say).
+- `WriteCSpectMap(w, symbols)` writes a map, sorted by name. A symbol with
+  no physical address gets `NextPhys` of its value if it is a label, which
+  is the address the Next's memory gives it when a program starts.
+- `Labels(symbols)` and `Constants(symbols)` pick the names that can stand
+  for an address, by address, made fit for an assembler (`Identifier`:
+  `START@LOOP` and `start.loop` become names with an underscore).
+- `Table` holds the names of several files for as long as a program is
+  loaded: `NewTable`, `AddFile` or `Add` in order of preference, then
+  `Label(addr)`, `Constant(value)` and `Name(addr)`.
+
+```go
+names := symfile.NewTable()
+names.AddFile(programMap, symfile.FormatAuto) // the first file's names win
+names.AddFile(romSymbols, symfile.FormatAuto)
+if name, ok := names.Name(0x229B); ok {
+    fmt.Println(name) // BORDER
+}
+```
+
+The formats were taken from files the tools themselves wrote (the maps
+that come with CSpect 4.5.1.0, sjasmplus 1.24.1, zenas) and from CSpect's
+ReadMe; z88dk's is from its documented shape and has not read a file z88dk
+made.
 
 ## pkg/version
 

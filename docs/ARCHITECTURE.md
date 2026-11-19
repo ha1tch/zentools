@@ -58,6 +58,7 @@ github.com/ha1tch/zentools
 │   ├── nex/         NEX files, the Spectrum Next executable format.
 │   ├── zx0/         ZX0 compression (a port of the reference compressor).
 │   ├── bdf/         BDF bitmap font reader, used internally by scr's OCR.
+│   ├── symfile/     Symbol files of other tools: CSpect maps, pasmo, sjasmplus, z88dk.
 │   ├── build/       overlay machine code onto a boot state; emit tapes/snapshots.
 │   └── version/     library version constant.
 ├── cmd/             CLI tools over the packages.
@@ -93,8 +94,8 @@ interchange ones.
 ## Package coupling
 
 A format package imports another only to share a model, never for convenience:
-`szx` and `build` use `snapshot`'s machine state, `build` composes `tap`, `tzx`
-and `basic`, `scr`'s OCR uses `bdf`, and `zxn` takes the Spectrum ULA colours
+`szx` and `build` use `snapshot`'s machine state, `build` composes `tap`, `tzx`,
+`pzx`, `basic` and `nex`, `scr`'s OCR uses `bdf`, and `zxn` takes the Spectrum ULA colours
 from `scr` so they are defined once. `cmd/` imports `pkg/*`. Otherwise keep the
 packages flat.
 (The one defensible exception, if it arises: a future `pkg/spectrum` holding

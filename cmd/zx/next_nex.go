@@ -401,10 +401,8 @@ func nextNexBuild(args []string) error {
 		if int(addr)+len(d) > 0x10000 {
 			return fmt.Errorf("-bin %q: %d bytes from %04X pass FFFF", b, len(d), addr)
 		}
-		slots := [4]int{-1, 5, 2, 0}
-		for i, v := range d {
-			a := int(addr) + i
-			bank(slots[a>>14])[a&0x3FFF] = v
+		if err := f.Load(uint16(addr), d); err != nil {
+			return err
 		}
 	}
 	data, err := nex.Encode(f)
